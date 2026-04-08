@@ -1,0 +1,65 @@
+[root@rocky-node1 ~]# pcs resource move dbgroup rocky-node2
+Error: Unable to move resource 'dbgroup' using a location constraint. Current location of the resource may be affected by some other constraint.
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs constraint
+Location Constraints:
+  resource 'apachegroup' prefers node 'rocky-node1' with score 100
+  resource 'dbgroup' prefers node 'rocky-node2' with score 100
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Wed Apr  8 06:07:08 2026 on rocky-node1
+  * Last change:  Tue Apr  7 10:57:39 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node1
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+[root@rocky-node1 ~]#
+
+[root@rocky-node1 ~]# pcs resource defaults
+Meta Attrs: build-resource-defaults
+  resource-stickiness=INFINITY
+
+
+pcs property defaults
+
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs constraint
+Location Constraints:
+  resource 'apachegroup' prefers node 'rocky-node1' with score 100
+  resource 'dbgroup' prefers node 'rocky-node2' with score 100
+[root@rocky-node1 ~]# pcs constraint show
+Deprecation Warning: This command is deprecated and will be removed. Please use 'pcs constraint config' instead.
+Location Constraints:
+  resource 'apachegroup' prefers node 'rocky-node1' with score 100
+  resource 'dbgroup' prefers node 'rocky-node2' with score 100
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]#
+
+
+pcs resource defaults update resource-stickiness=0
+
+pcs resource move dbgroup rocky-node2
+
+
+pcs resource defaults update resource-stickiness=200
