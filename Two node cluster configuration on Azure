@@ -102,7 +102,34 @@ For RHEL 9 Servers
   pcmk_monitor_timeout=120 \
   op monitor interval=60s
 
-#10.  Create Share volume groups, command to be run from any node1.
+11.  Choosing HA-LVM or shared volumes ==> Very important 
+
+https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/configuring_and_managing_high_availability_clusters/assembly_overview-of-high-availability-configuring-and-managing-high-availability-clusters#con_HA-lvm-shared-volumes-overview-of-high-availability
+
+When to use HA-LVM or shared logical volumes managed by the lvmlockd daemon should be based on the needs of the applications or services being deployed.
+
+If multiple nodes of the cluster require simultaneous read/write access to LVM volumes in an active/active system, then you must use the lvmlockd daemon and configure your volumes as shared volumes. The lvmlockd daemon provides a system for coordinating activation of and changes to LVM volumes across nodes of a cluster concurrently. The lvmlockd daemon’s locking service provides protection to LVM metadata as various nodes of the cluster interact with volumes and make changes to their layout. This protection is contingent upon configuring any volume group that will be activated simultaneously across multiple cluster nodes as a shared volume.
+If the high availability cluster is configured to manage shared resources in an active/passive manner with only one single member needing access to a given LVM volume at a time, then you can use HA-LVM without the lvmlockd locking service.
+Most applications will run better in an active/passive configuration, as they are not designed or optimized to run concurrently with other instances. Choosing to run an application that is not cluster-aware on shared logical volumes can result in degraded performance. This is because there is cluster communication overhead for the logical volumes themselves in these instances. A cluster-aware application must be able to achieve performance gains above the performance losses introduced by cluster file systems and cluster-aware logical volumes. This is achievable for some applications and workloads more easily than others. Determining what the requirements of the cluster are and whether the extra effort toward optimizing for an active/active cluster will pay dividends is the way to choose between the two LVM variants. Most users will achieve the best HA results from using HA-LVM.
+
+HA-LVM and shared logical volumes using lvmlockd are similar in the fact that they prevent corruption of LVM metadata and its logical volumes, which could otherwise occur if multiple machines are allowed to make overlapping changes. HA-LVM imposes the restriction that a logical volume can only be activated exclusively; that is, active on only one machine at a time. This means that only local (non-clustered) implementations of the storage drivers are used. Avoiding the cluster coordination overhead in this way increases performance. A shared volume using lvmlockd does not impose these restrictions and a user is free to activate a logical volume on all machines in a cluster; this forces the use of cluster-aware storage drivers, which allow for cluster-aware file systems and applications to be put on top.
+
+Clusters are managed through Pacemaker. Both HA-LVM and shared logical volumes are supported only in conjunction with Pacemaker clusters, and must be configured as cluster resources.
+
+Based on the above recommendation, it is suggested to use HA-LVM fot active/passive cluster.
+
+# Change the parameters in /etc/lvm/lvm.conf file on both the nodes.
+
+# /etc/lvm/lvm.conf
+  system_id_source = “uname”
+  use_devicesfile=1
+
+# lvm systemid
+  system ID: rocky-node1
+# uname -n
+  rocky-node1
+
+12. Configure shared Volume for the cluster
 
 [root@rocky-node1 ~]# lsscsi -si
 [1:0:0:10]   disk    Msft     Virtual Disk     1.0   /dev/sdc   3600224804f692fd379cbeeefb8a0c19f  10.7GB
@@ -113,33 +140,90 @@ For RHEL 9 Servers
 [0:0:0:10]   disk    Msft     Virtual Disk     1.0   /dev/sdc   3600224804f692fd379cbeeefb8a0c19f  10.7GB
 [0:0:0:11]   disk    Msft     Virtual Disk     1.0   /dev/sdd   360022480690694bae28e57e38efdc4ae  16.1GB
 
+[root@rocky-node1 ~]#  pvcreate /dev/sdc /dev/sdd
 
-[root@rocky-node1 ~]#  vgs
-  VG     #PV #LV #SN Attr   VSize   VFree
-  vg_app   1   1   0 wz--n- <10.00g  <5.00g
-  vg_db    1   1   0 wz--n- <15.00g <10.00g
+[root@rocky-node1 ~]# vgcreate --setautoactivation n vg_app /dev/sdc
+[root@rocky-node1 ~]# vgcreate --setautoactivation n vg_db /dev/sdd
 
+[root@rocky-node1 ~]# lvcreate -n lv_app -L 5G vg_app
+[root@rocky-node1 ~]# lvcreate -n lv_db -L 5G vg_db
 
-pcs resource create ha_vg_app ocf:heartbeat:LVM-activate vgname=vg_app vg_access_mode=system_id --group apachegroup
+[root@rocky-node1 ~]# mkfs.xfs /dev/vg_app/lv_app
+[root@rocky-node1 ~]# mkfs.xfs /dev/vg_db/lv_db
 
-pcs resource create ha_vg_app_fs Filesystem device="/dev/vg_app/lv_app" directory="/var/www" fstype="xfs" --group apachegroup
+Add these devices on 2nd node
 
-pcs resource create VirtualIP IPaddr2 ip=10.1.0.6 cidr_netmask=24 --group apachegroup
+[root@rocky-node2 ~]# lvmdevices --adddev /dev/sdc
+[root@rocky-node2 ~]# lvmdevices --adddev /dev/sdd
 
-pcs resource create Website apache configfile="/etc/httpd/conf/httpd.conf" statusurl="http://127.0.0.1/server-status" --group apachegroup
+# mkdir /data
+# mkdir /var/www
 
+13. Create cluster resources and resource group
+[root@rocky-node1 ~]# pcs resource create ha_vg_app ocf:heartbeat:LVM-activate vgname=vg_app vg_access_mode=system_id --group apachegroup
 
-pcs resource create ha_vg_db ocf:heartbeat:LVM-activate vgname=vg_db vg_access_mode=system_id --group dbgroup
+[root@rocky-node1 ~]# pcs resource create ha_vg_app_fs Filesystem device="/dev/vg_app/lv_app" directory="/var/www" fstype="xfs" --group apachegroup
 
-pcs resource create ha_vg_db_fs Filesystem device="/dev/vg_db/lv_db" directory="/data fstype="xfs" --group dbgroup
+[root@rocky-node1 ~]# pcs resource create VirtualIP IPaddr2 ip=10.1.0.6 cidr_netmask=24 --group apachegroup
 
-pcs resource create VirtualIP IPaddr2 ip=10.1.0.7 cidr_netmask=24 --group dbgroup
+[root@rocky-node1 ~]# pcs resource create Website apache configfile="/etc/httpd/conf/httpd.conf" statusurl="http://127.0.0.1/server-status" --group apachegroup
 
+[root@rocky-node1 ~]# pcs resource create ha_vg_db ocf:heartbeat:LVM-activate vgname=vg_db vg_access_mode=system_id --group dbgroup
 
-Failed Resource Actions:
-  * fence-azure start on rocky-node2 returned 'error'
-  * ha_vg_app start on rocky-node2 returned 'error' (vg_app: failed to activate.)
+[root@rocky-node1 ~]# pcs resource create ha_vg_db_fs Filesystem device="/dev/vg_db/lv_db" directory="/data fstype="xfs" --group dbgroup
 
+[root@rocky-node1 ~]# pcs resource create VirtualIP IPaddr2 ip=10.1.0.7 cidr_netmask=24 --group dbgroup
+
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Wed Apr  8 06:55:24 2026 on rocky-node1
+  * Last change:  Wed Apr  8 06:51:27 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node1
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node2
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+============================Cluster Configration Completed======================
+
+Q. How to create location constraint for resources so that the resoruces can be started on their preffered node and do not fallback after failover.
+
+- Crate location constraint with score value 100, default is 0. It
+[root@rocky-node1 ~]# pcs constraint location apachegroup prefers rocky-node1=100
+[root@rocky-node1 ~]# pcs constraint location dbgroup     prefers rocky-node2=100
+
+[root@rocky-node1 ~]# pcs constraint config
+Location Constraints:
+  resource 'apachegroup' prefers node 'rocky-node1' with score 100
+  resource 'dbgroup' prefers node 'rocky-node2' with score 100
+
+- Update default stickiness value to aviod resource fallback.
+
+[root@rocky-node1 ~]# pcs resource defaults
+Meta Attrs: build-resource-defaults
+  resource-stickiness=0
+[root@rocky-node1 ~]# pcs resource defaults update resource-stickiness=200
+
+======================================================================================================================
 
 pcs resource cleanup apachegroup
 
