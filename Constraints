@@ -1,0 +1,224 @@
+✅ What is a constraint?
+
+A constraint in Pacemaker (pcs cluster) is just a rule or preference that tells the cluster:
+
+👉 “Where or how should a resource run?”
+
+Example from your output:
+resource 'apachegroup' prefers node 'rocky-node1' with score 100
+
+👉 Meaning:
+
+Cluster prefers to run apachegroup on rocky-node1
+But it’s not compulsory (it can run on another node if needed)
+
+So in simple words:
+
+👉 Constraint = guideline or rule for resource placement
+
+✅ What is resource stickiness?
+resource-stickiness=INFINITY
+
+👉 This means:
+
+Once a resource is running on a node,
+It will strongly prefer to stay there
+It will NOT move unless there is a serious reason (like node failure)
+Simple meaning:
+
+👉 Stickiness = how much a resource likes to stay where it is already running
+
+🔗 How constraint and stickiness are related
+
+Think of it like this:
+
+1. Constraint (initial decision)
+Decides where the resource should ideally run
+Example: “Run apache on node1”
+2. Stickiness (after it starts running)
+Decides whether it should move or stay
+Example: “Now that apache is running on node2, don’t move it back”
+🔥 Real-world scenario
+Cluster starts:
+Constraint says → prefer rocky-node1
+So apache starts on node1
+Node1 goes down:
+Apache moves to node2
+Node1 comes back:
+Constraint says → prefer node1
+BUT stickiness = INFINITY says:
+❌ “Don’t move from node2”
+✅ “Stay where you are”
+🎯 Final Simple Summary
+Constraint → “Where should I run?”
+Stickiness → “Should I move or stay?”
+💡 One-line understanding
+
+👉 Constraint decides placement, stickiness decides movement
+
+If you want, I can also show:
+
+How to reduce stickiness (so resources move back automatically)
+Or how to force move resources between nodes 👍
+and what is score value
+
+Good question—this is the missing piece to fully understand constraints 👍
+
+✅ What is score?
+
+A score is just a number that tells the cluster how strong a rule (constraint) is.
+
+👉 In simple words:
+
+Score = priority level of a constraint
+
+🔢 How score works
+
+Pacemaker uses scores to decide the best node for a resource.
+
+Higher score = more preferred
+Lower score = less preferred
+Negative score = avoid that node
+📌 Your example
+resource 'apachegroup' prefers node 'rocky-node1' with score 100
+
+👉 Meaning:
+
+Node1 gets +100 points
+Other nodes get less (or 0)
+So cluster chooses node1
+🔥 Common score values
+Score	Meaning
+0	No preference
+100	Soft preference
+1000	Strong preference
+INFINITY	Must run here (hard rule)
+-100	Avoid this node
+-INFINITY	Never run here
+🧠 How cluster decides
+
+Cluster calculates total score for each node:
+
+👉 Example:
+
+Node	Score
+node1	100
+node2	0
+
+✅ Result → resource runs on node1
+
+🔗 Relation with stickiness
+
+Now combine everything:
+
+Example scenario
+Constraint:
+node1 = +100
+Resource currently running on node2
+Stickiness = INFINITY
+
+👉 Final decision:
+
+node2 gets INFINITY (stickiness)
+node1 gets 100 (constraint)
+
+✅ Result:
+👉 Resource stays on node2
+
+🎯 Simple analogy
+
+Think of it like choosing a hotel:
+
+Constraint score = hotel rating ⭐
+Stickiness = “I’m already staying here, don’t want to move”
+
+Even if another hotel is better rated, you won’t move easily 😄
+
+💡 One-line summary
+
+👉 Score = how strongly the cluster prefers a node
+
+If you want, I can show:
+
+How multiple constraints combine their scores
+Or how to debug why a resource chose a specific node (very useful in real clusters)
+In my configuration i can see score 100 for apachegroup on node1, but b=what is this value for node2 
+
+Good observation 👍 — this is where people usually get confused.
+
+✅ What is the score for node2 in your case?
+
+Your config:
+
+resource 'apachegroup' prefers node 'rocky-node1' with score 100
+
+👉 This means:
+
+node1 → score = +100
+node2 → score = 0 (default)
+📌 Why node2 = 0?
+
+Because:
+
+You did not define any constraint for node2
+So Pacemaker assumes:
+
+👉 “No preference” = score 0
+
+🧠 How cluster compares
+Node	Score
+rocky-node1	100
+rocky-node2	0
+
+✅ Result:
+
+Cluster chooses rocky-node1 because 100 > 0
+🔥 Important point
+
+👉 Scores are relative, not absolute.
+
+Node2 is not “bad”
+It just has less preference
+🧪 What if node1 fails?
+node1 unavailable → ignored
+node2 (score 0) becomes best available
+
+✅ So apachegroup runs on node2
+
+🔗 With stickiness (your config)
+
+Since you have:
+
+resource-stickiness=INFINITY
+
+If apachegroup is already running on node2:
+
+Node	Score
+node1	100
+node2	INFINITY
+
+✅ Result:
+👉 It stays on node2, even though node1 is preferred
+
+🎯 Final simple answer
+
+👉 In your setup:
+
+node1 score = 100
+node2 score = 0 (default)
+💡 Tip (very useful in real clusters)
+
+If you want to explicitly set node2:
+
+pcs constraint location apachegroup prefers rocky-node2=50
+
+Then:
+
+Node	Score
+node1	100
+node2	50
+
+If you want, I can also show:
+
+How to see final calculated scores using pcs status or crm_simulate
+Or why sometimes resources don’t move even when scores change 👍
