@@ -1,4 +1,121 @@
+[root@rocky-node1 ~]# pcs status^C
+[root@rocky-node1 ~]# pcs cluster stop rocky-node2 --force
+rocky-node2: Unable to connect to rocky-node2, check if pcsd is running there or try setting higher timeout with --request-timeout option (Failed to connect to rocky-node2 port 2224: Connection refused)
+Error: unable to stop all nodes
+rocky-node2: Unable to connect to rocky-node2, check if pcsd is running there or try setting higher timeout with --request-timeout option (Failed to connect to rocky-node2 port 2224: Connection refused)
+[root@rocky-node1 ~]# pcs cluster stop rocky-node2 --force^C
+[root@rocky-node1 ~]# pcs cluster node remove rocky-node2
+Error: Unable to connect to rocky-node1 (Failed to connect to rocky-node1 port 2224: Connection refused), use --skip-offline to override
+Error: Unable to connect to rocky-node2 (Failed to connect to rocky-node2 port 2224: Connection refused), use --skip-offline to override
+Error: Unable to connect to any remaining cluster node
+Error: Errors have occurred, therefore pcs is unable to continue
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# systemctl start pcsd
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs cluster stop rocky-node2
+rocky-node2: Stopping Cluster (pacemaker)...
+rocky-node2: Stopping Cluster (corosync)...
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Wed Apr  8 09:42:01 2026 on rocky-node1
+  * Last change:  Wed Apr  8 09:36:37 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
 
+Node List:
+  * Node rocky-node2: OFFLINE (standby)
+  * Online: [ rocky-node1 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node1
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/disabled
+[root@rocky-node1 ~]# pcs cluster node remove rocky-node2
+Destroying cluster on hosts: 'rocky-node2'...
+rocky-node2: Successfully destroyed cluster
+Sending updated corosync.conf to nodes...
+rocky-node1: Succeeded
+rocky-node1: Corosync configuration reloaded
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Wed Apr  8 09:42:22 2026 on rocky-node1
+  * Last change:  Wed Apr  8 09:42:17 2026 by hacluster via hacluster on rocky-node1
+  * 1 node configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node1
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/disabled
+[root@rocky-node1 ~]#
+
+
+[root@rocky-node1 ~]# pcs property set no-quorum-policy=ignore
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Wed Apr  8 09:43:01 2026 on rocky-node1
+  * Last change:  Wed Apr  8 09:42:17 2026 by hacluster via hacluster on rocky-node1
+  * 1 node configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node1
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/disabled
+=======================================================================================
 
 How to add new node in the 2 node pcs cluster
 
