@@ -1,0 +1,1079 @@
+
+
+How to add new node in the 2 node pcs cluster
+
+Adding a new node to an existing 2-node PCS (Pacemaker/Corosync) cluster is a structured process. Below is a clean, step-by-step guide you can follow on RHEL / Rocky / Alma Linux (PCS cluster).
+
+🧩 Current Setup Assumption
+Existing nodes: node1, node2
+
+New node to add: node3
+
+Cluster name: mycluster
+
+✅ Step 1: Prepare the New Node (node3)
+Run on node3:
+
+# Set hostname
+hostnamectl set-hostname node3
+
+# Add all nodes in /etc/hosts (on ALL nodes)
+vi /etc/hosts
+Example:
+
+192.168.1.101 node1
+192.168.1.102 node2
+192.168.1.103 node3
+✅ Step 2: Install Required Packages
+On node3:
+
+dnf install -y pcs pacemaker corosync fence-agents-all
+✅ Step 3: Enable and Start pcsd
+systemctl enable --now pcsd
+✅ Step 4: Set Password for hacluster User
+Run on ALL nodes (node1, node2, node3):
+
+passwd hacluster
+⚠️ Use the same password everywhere.
+
+✅ Step 5: Authenticate the New Node
+Run from any existing node (node1):
+
+pcs host auth node3 -u hacluster -p <password>
+Or authenticate all together:
+
+pcs host auth node1 node2 node3 -u hacluster -p <password>
+✅ Step 6: Add Node to Cluster
+Run on node1:
+
+pcs cluster node add node3
+✅ Step 7: Sync and Start Cluster on New Node
+pcs cluster start node3
+Enable cluster on boot:
+
+pcs cluster enable node3
+✅ Step 8: Verify Cluster Status
+pcs status
+You should now see:
+
+Online: [ node1 node2 node3 ]
+⚠️ Important Considerations
+1. Quorum Changes (Very Important)
+2-node cluster → quorum = 2
+
+3-node cluster → quorum = 2 (majority)
+
+Check:
+
+pcs quorum status
+2. Update Corosync Config (if needed)
+Usually handled automatically, but verify:
+
+pcs cluster config
+3. Fencing (STONITH)
+If fencing is configured, ensure:
+
+New node is added to fencing device
+
+Example:
+
+pcs stonith update <stonith_name> pcmk_host_list="node1,node2,node3"
+4. Resource Constraints
+Check if constraints need update:
+
+pcs constraint
+You may need to adjust location constraints for node3.
+
+🧪 Optional: Test Failover
+After adding node3:
+
+pcs node standby node1
+Check if resources move properly.
+
+🚀 Summary
+Prepare node3 (hostname, hosts file)
+
+Install cluster packages
+
+Start pcsd and set hacluster password
+
+Authenticate node
+
+Add node to cluster
+
+Start and verify
+
+Adjust quorum, fencing, constraints
+
+If you want, I can give you:
+
+Exact commands tailored to your current cluster output (pcs status)
+
+Or help you avoid resource movement while adding node (very useful in production)
+
+
+3-node cluster → quorum = 2 (majority), do we require qdisk arbitration or onlye fencing is sufficient
+
+Short answer: You do NOT need qdisk in a 3-node PCS cluster. Fencing (STONITH) is sufficient and mandatory.
+
+🧠 Why quorum works without qdisk
+In a 3-node cluster:
+
+Total votes = 3
+
+Majority (quorum) = 2
+
+So:
+
+If 1 node fails → remaining 2 nodes still have quorum ✅
+
+If network splits (1 vs 2) → the side with 2 nodes wins automatically ✅
+
+👉 This already solves the split-brain problem without external arbitration.
+
+🔥 Role of Fencing (STONITH)
+Even with quorum, fencing is REQUIRED.
+
+Why:
+
+If a node becomes unresponsive but still running resources → risk of data corruption
+
+Fencing ensures the faulty node is powered off before resources start elsewhere
+
+✔ So in production:
+
+pcs property set stonith-enabled=true
+❓ When is qdisk needed?
+QDevice (qdisk) is useful mainly in:
+
+1. 2-node cluster
+Votes = 2 → quorum = 2 ❌ problem
+
+If 1 node fails → no quorum
+
+Solution: add qdevice → total votes = 3 → quorum = 2 ✅
+
+2. Special cases (rare)
+Multi-site clusters (geo clusters)
+
+You want an external tie-breaker
+
+🚫 For your case (3-node cluster)
+❌ qdisk / qdevice → NOT required
+
+✅ fencing → MANDATORY
+
+✅ quorum → already handled
+
+⚠️ Best Practice Checklist
+For a stable 3-node cluster:
+
+✔ Fencing configured for all 3 nodes
+
+✔ stonith-enabled=true
+
+✔ No no-quorum-policy=ignore (avoid risky config)
+
+Check:
+
+pcs property show
+🧾 Simple Conclusion
+2-node cluster → need qdevice
+
+3-node cluster → no qdevice needed
+
+Fencing → always required (in both cases)
+
+If you want, I can review your current fencing config and tell you if it’s production-safe 👍
+
+
+For 4 nodes, qdisk will be requiored
+
+Good question — this is where many people get confused.
+
+🧠 Short Answer
+No, qdisk (qdevice) is NOT required for a 4-node cluster.
+But it is recommended in many cases.
+
+⚖️ How quorum works in a 4-node cluster
+Total votes = 4
+
+Quorum (majority) = 3
+
+Scenarios:
+Situation	Result
+1 node fails (3 nodes alive)	✅ Quorum maintained
+2 nodes fail (2 nodes alive)	❌ No quorum
+Split brain (2 vs 2)	❌ No quorum on either side
+👉 The problem is the 2 vs 2 split — no side has majority.
+
+🔥 So what happens without qdevice?
+Cluster will stop resources (default behavior)
+
+This is safe but causes downtime
+
+✔ No data corruption
+❌ But service interruption
+
+🧩 Where qdevice helps
+If you add a qdevice (external arbitrator):
+
+Total votes = 5 (4 nodes + 1 qdevice)
+
+Quorum = 3
+
+Now in split (2 vs 2):
+One side gets qdevice vote → 3 votes ✅
+
+Other side → 2 votes ❌
+
+👉 Result: one side survives, no downtime
+
+🔥 Role of Fencing (Still Mandatory)
+Even with or without qdevice:
+
+✔ Fencing (STONITH) is always required
+
+It prevents split-brain data corruption
+
+✅ Best Practice Recommendation
+For 4-node cluster:
+✔ Fencing → MANDATORY
+
+✔ qdevice → RECOMMENDED (not mandatory)
+
+🚦 When you SHOULD use qdevice
+Use qdevice if:
+
+High availability is critical (banking, production DB, etc.)
+
+You want to avoid downtime during 2–2 split
+
+Multi-site cluster
+
+🚫 When you can skip qdevice
+Non-critical workloads
+
+Occasional downtime is acceptable
+
+Simpler setup preferred
+
+🧾 Final Conclusion
+3-node cluster → No qdevice needed
+
+4-node cluster → qdevice optional but recommended
+
+Fencing → always mandatory
+
+If you want, I can help you:
+
+Configure pcs qdevice setup step-by-step
+
+Or analyze your cluster whether qdevice is really needed 👍
+
+
+In 3 node cluster, if i need my services to be running even if 2 nodes fails, then what we have to do
+
+This is a very important design question — and the answer is a bit hard truth:
+
+❗ Short Answer
+In a 3-node cluster, if 2 nodes fail, you cannot keep services running safely using normal quorum rules.
+
+🧠 Why this happens
+In a 3-node cluster:
+
+Total votes = 3
+
+Quorum = 2 (majority)
+
+If 2 nodes fail:
+Only 1 node remains
+
+Votes = 1 → ❌ No quorum
+
+👉 Cluster will stop all resources (default behavior)
+
+⚠️ Can we force it to run on 1 node?
+Yes, but it is risky.
+
+Option 1: Ignore quorum
+pcs property set no-quorum-policy=ignore
+What happens:
+Single node will continue running resources ✅
+
+But:
+
+❌ Risk of split-brain
+
+❌ Possible data corruption (especially for DB, shared storage)
+
+👉 This is NOT recommended for production unless you fully understand the risk.
+
+🔥 Safe & Recommended Approaches
+✅ Option 2: Increase cluster size
+Use 5 nodes instead of 3:
+
+Votes = 5
+
+Quorum = 3
+
+Now:
+
+If 2 nodes fail → 3 nodes remain → ✅ services continue
+
+✅ Option 3: Use QDevice (better approach)
+Add a qdevice (arbitrator node):
+
+Total votes = 4 (3 nodes + 1 qdevice)
+
+Quorum = 3
+
+Now:
+
+If 2 nodes fail:
+
+1 node + qdevice = 2 votes → ❌ still not enough
+
+👉 So even with qdevice, you still can’t survive 2 failures safely
+
+✅ Option 4: Application-level HA (best for critical apps)
+Instead of relying only on cluster:
+
+Use DB replication (Oracle Data Guard, MySQL replication, etc.)
+
+Use app-level failover
+
+🚫 What NOT to do
+Don’t rely on no-quorum-policy=ignore for critical systems
+
+Don’t disable fencing to “force” availability
+
+🧾 Final Conclusion
+Requirement	Solution
+Survive 1 node failure	✅ 3-node cluster
+Survive 2 node failure	❌ Not possible safely with 3 nodes
+Survive 2 node failure safely	✅ Minimum 5 nodes
+👍 Practical Advice
+If your requirement is:
+
+“Service must run even if 2 nodes fail”
+
+Then:
+
+✔ Go for 5-node cluster
+
+✔ Or redesign with replication + DR
+
+If you want, tell me your use case (DB, app, shared storage), I can suggest the best HA architecture for your environment 👍
+
+
+What are steps to remove one node in 2 nodes cluster and new 2nd node
+
+Got it — you want to replace one node in a 2-node PCS cluster (remove old node2 and add new node2). This needs to be done carefully to avoid downtime or split-brain.
+
+🔄 Scenario
+Current cluster: node1, node2
+
+You want:
+
+❌ Remove node2
+
+✅ Add new node (say node3) as second node
+
+⚠️ Important Precautions
+Before starting:
+
+✔ Ensure cluster is healthy
+
+✔ Move all resources to node1
+
+✔ Confirm fencing is working
+
+✅ Step 1: Move Resources to node1
+pcs node standby node2
+Check:
+
+pcs status
+👉 Ensure all resources are running on node1
+
+✅ Step 2: Stop Cluster on node2
+On node2:
+
+pcs cluster stop node2
+✅ Step 3: Remove node2 from Cluster
+Run on node1:
+
+pcs cluster node remove node2
+Verify:
+
+pcs status
+👉 Now only node1 should be in cluster
+
+⚠️ Step 4: Adjust Quorum Policy (VERY IMPORTANT)
+Now cluster has only 1 node, so quorum will be lost.
+
+Temporarily allow it:
+
+pcs property set no-quorum-policy=ignore
+✅ Step 5: Prepare New Node (node3)
+On node3:
+
+1. Set hostname
+hostnamectl set-hostname node3
+2. Update /etc/hosts (on BOTH nodes)
+192.168.1.101 node1
+192.168.1.103 node3
+3. Install packages
+dnf install -y pcs pacemaker corosync fence-agents-all
+4. Start pcsd
+systemctl enable --now pcsd
+5. Set password
+passwd hacluster
+(Same password as node1)
+
+✅ Step 6: Authenticate New Node
+On node1:
+
+pcs host auth node3 -u hacluster -p <password>
+✅ Step 7: Add New Node to Cluster
+pcs cluster node add node3
+✅ Step 8: Start Cluster on New Node
+pcs cluster start node3
+pcs cluster enable node3
+✅ Step 9: Restore Quorum Policy
+After node3 joins:
+
+pcs property set no-quorum-policy=stop
+✅ Step 10: Update Fencing (CRITICAL)
+If STONITH exists, update it:
+
+pcs stonith update <stonith_name> pcmk_host_list="node1,node3"
+✅ Step 11: Verify Cluster
+pcs status
+pcs quorum status
+Expected:
+
+Online: [ node1 node3 ]
+🧪 Optional: Test Failover
+pcs node standby node1
+👉 Check if resources move to node3
+
+🚨 Common Mistakes to Avoid
+❌ Forgetting to update fencing → can cause split-brain
+
+❌ Not setting no-quorum-policy=ignore temporarily
+
+❌ Not moving resources before removing node
+
+❌ Mismatch in /etc/hosts
+
+🧾 Final Flow Summary
+Move resources → node1
+
+Stop & remove node2
+
+Temporarily ignore quorum
+
+Prepare node3
+
+Authenticate & add node3
+
+Start cluster on node3
+
+Restore quorum policy
+
+Update fencing
+
+If you want, I can:
+
+Customize steps based on your current pcs status output
+
+Or help you do this without downtime (live production safe method) 👍
+
+
+rocky-node2: Unable to connect to rocky-node2, check if pcsd is running there or try setting higher timeout with --request-timeout option (Failed to connect to rocky-node2 port 2224: Connection refused)
+Error: unable to stop all nodes
+
+This error is very common during node removal/replacement. Let’s break it down clearly:
+
+❗ Error Explanation
+Unable to connect to rocky-node2
+Failed to connect to port 2224: Connection refused
+Error: unable to stop all nodes
+👉 Meaning:
+
+pcsd service is NOT running on rocky-node2
+
+Or node is already down / unreachable
+
+PCS cannot communicate to stop cluster services cleanly
+
+🧠 Important Understanding
+When removing a node:
+
+PCS tries to contact that node
+
+If node is already down → removal fails with this error
+
+👉 But you can still remove it forcefully
+
+✅ Solution (Force Remove Node)
+Run this on active node (rocky-node1):
+
+pcs cluster node remove rocky-node2 --force
+🔥 If Above Command Fails
+Use manual cleanup:
+
+1. Remove node from corosync config
+pcs cluster config
+Then:
+
+pcs cluster node remove rocky-node2 --force --skip-offline
+2. If still stuck → edit config manually
+vi /etc/corosync/corosync.conf
+Remove entry of rocky-node2 under:
+
+nodelist {
+    node {
+        ring0_addr: rocky-node1
+    }
+    # REMOVE THIS BLOCK
+    node {
+        ring0_addr: rocky-node2
+    }
+}
+3. Reload cluster config
+pcs cluster reload corosync
+⚠️ Very Important After Removal
+1. Check cluster status
+pcs status
+2. Fix quorum issue (since now 1 node)
+pcs property set no-quorum-policy=ignore
+3. Clean any leftover resources
+pcs node cleanup rocky-node2
+4. Update fencing (CRITICAL)
+pcs stonith update <stonith_name> pcmk_host_list="rocky-node1"
+👉 If you skip this → cluster may try fencing non-existing node
+
+🧾 Root Cause Summary
+Issue	Reason
+Connection refused	pcsd not running / node down
+Removal failed	PCS expects node to respond
+✅ Best Practice
+Before removing node (next time):
+
+pcs node standby rocky-node2
+pcs cluster stop rocky-node2
+systemctl stop pcsd
+Then remove → no error
+
+🚀 Final Outcome
+✔ Node removed even if offline
+
+✔ Cluster continues on single node
+
+✔ Ready to add new node
+
+If you want, share your pcs status output — I’ll verify if your cluster is clean before you add the new node 👍
+
+
+[root@rocky-node2 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Wed Apr  8 09:39:00 2026 on rocky-node2
+  * Last change:  Wed Apr  8 09:36:37 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Node rocky-node2: standby
+  * Online: [ rocky-node1 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node1
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+
+
+Thanks — this output helps a lot. Your cluster is actually in a safe state to remove rocky-node2, but there’s one key issue causing your earlier error.
+
+🔍 Current Situation Analysis
+From your pcs status:
+
+✔ rocky-node2 is standby
+
+✔ All resources are running on rocky-node1
+
+❗ pcsd on rocky-node2 is inactive/disabled
+
+❗ Cluster still thinks 2 nodes configured
+
+👉 That’s why you got:
+
+Connection refused (port 2224)
+✅ What You Should Do Now
+Since:
+
+Node is already standby
+
+pcsd is down
+
+Resources are safe on node1
+
+👉 You can proceed with force removal
+
+🚀 Step-by-Step Fix
+✅ Step 1: Remove node forcefully
+Run on rocky-node1:
+
+pcs cluster node remove rocky-node2 --force
+✅ Step 2: Verify removal
+pcs status
+Expected:
+
+Online: [ rocky-node1 ]
+⚠️ Step 3: Fix quorum (VERY IMPORTANT)
+Now only 1 node remains:
+
+pcs property set no-quorum-policy=ignore
+🔥 Step 4: Update fencing (CRITICAL)
+Your fencing device:
+
+fence-azure (stonith:fence_azure_arm)
+Update it:
+
+pcs stonith update fence-azure pcmk_host_list="rocky-node1"
+👉 Otherwise cluster may try to fence removed node
+
+🧹 Step 5: Cleanup (optional but recommended)
+pcs node cleanup rocky-node2
+🧠 Why This Works
+Cluster is already running only on node1
+
+rocky-node2 is not active → safe to remove
+
+--force bypasses pcsd communication
+
+⚠️ Important Before Adding New Node
+After removal, ensure:
+
+pcs status
+pcs quorum status
+pcs stonith show
+Everything should reflect only rocky-node1
+
+🚀 Then You Can Add New Node
+After this, follow:
+
+Prepare new node
+
+pcs host auth
+
+pcs cluster node add <new-node>
+
+🧾 Summary
+Item	Status
+Resources	✅ Safe on node1
+node2	✅ Standby
+pcsd	❌ Not running (expected issue)
+Action	👉 Use --force removal
+If you want, next I can guide you with:
+👉 Zero-downtime method to add new node safely
+👉 Or validate your fencing before you proceed (very important in Azure setup)
+
+
+pcs node cleanup rocky-node2 . this is not working
+
+That’s expected in your situation — and it’s actually not a problem 👍
+
+🧠 Why pcs node cleanup rocky-node2 is not working
+rocky-node2 is:
+
+❌ Offline / pcsd not running
+
+❌ Possibly already partially removed or unreachable
+
+👉 The pcs node cleanup command:
+
+Works only when the node is known + reachable
+
+Used to clear fail counts / transient errors
+
+➡️ In your case, node is offline, so cleanup won’t work.
+
+✅ What you should do instead
+Focus on proper removal, not cleanup.
+
+🔥 Step 1: Check if node still exists in cluster
+Run on rocky-node1:
+
+pcs status nodes
+or:
+
+pcs cluster config
+👉 If you still see rocky-node2, continue below.
+
+🚀 Step 2: Force remove node (correct approach)
+pcs cluster node remove rocky-node2 --force
+❗ If STILL failing
+Then do manual cleanup (last resort)
+
+1. Edit Corosync config
+vi /etc/corosync/corosync.conf
+Remove this block:
+
+node {
+    ring0_addr: rocky-node2
+}
+2. Reload config
+pcs cluster reload corosync
+3. Restart cluster services (if needed)
+pcs cluster stop --all
+pcs cluster start --all
+🔥 Step 3: Clean fencing (VERY IMPORTANT)
+Your fencing still may include old node:
+
+pcs stonith show
+Update it:
+
+pcs stonith update fence-azure pcmk_host_list="rocky-node1"
+⚠️ Step 4: Fix quorum
+Since only 1 node:
+
+pcs property set no-quorum-policy=ignore
+🧾 Key Point (Important)
+👉 pcs node cleanup is NOT required when:
+
+You are removing a node
+
+Node is offline
+
+It is only for:
+
+Clearing failure counters
+
+Recovering resources
+
+✅ What success looks like
+After all steps:
+
+pcs status
+Should show:
+
+Online: [ rocky-node1 ]
+No reference to rocky-node2
+
+👍 Final Advice
+You’re on the right track. Just remember:
+
+❌ Don’t worry about cleanup here
+
+✅ Focus on removal + fencing update
+
+✅ Then proceed to add new node
+
+If you want, paste output of:
+
+pcs cluster config
+I’ll tell you exactly whether rocky-node2 is fully removed or still lingering 👍
+
+
+How to view fencing is enabled for both nodes or not
+
+Good question — this is very important for cluster safety 👍
+
+Let’s verify fencing step by step.
+
+✅ 1. Check if STONITH (fencing) is enabled globally
+Run:
+
+pcs property show
+Look for:
+
+stonith-enabled: true
+✔ If true → fencing is enabled
+❌ If false → fencing is disabled (not safe for production)
+
+✅ 2. Check fencing devices configured
+pcs stonith show
+Example output:
+
+Resource: fence-azure (class=stonith type=fence_azure_arm)
+👉 This confirms fencing device exists
+
+✅ 3. Check which nodes are covered by fencing
+Run:
+
+pcs stonith show fence-azure
+Look for:
+
+pcmk_host_list="rocky-node1,rocky-node2"
+✔ This means both nodes are fenced
+❌ If only one node is listed → incomplete fencing
+
+✅ 4. Verify fencing status (runtime)
+pcs status
+Look for:
+
+fence-azure (stonith:fence_azure_arm): Started rocky-node1
+👉 Means fencing agent is active
+
+🧪 5. (Optional but Best Practice) Test fencing
+⚠️ Do this carefully in non-production or maintenance window:
+
+pcs stonith fence rocky-node2
+👉 Expected:
+
+Node2 should reboot/power off
+
+Cluster should recover resources
+
+🚨 Common Issues to Watch
+❌ Missing node in fencing
+Fix:
+
+pcs stonith update fence-azure pcmk_host_list="rocky-node1,rocky-node2"
+❌ Fencing disabled
+Fix:
+
+pcs property set stonith-enabled=true
+❌ Wrong Azure config (in your case)
+Since you're using:
+
+fence_azure_arm
+Ensure:
+
+Correct subscriptionId
+
+Correct resourceGroup
+
+Correct tenantId
+
+MSI/credentials working
+
+🧾 Quick Checklist
+Check	Command	Expected
+Fencing enabled	pcs property show	stonith-enabled: true
+Device exists	pcs stonith show	fence device listed
+Nodes covered	pcs stonith show <name>	both nodes listed
+Running	pcs status	stonith started
+👍 Simple Summary
+To confirm fencing for both nodes:
+
+pcs property show
+pcs stonith show
+pcs stonith show fence-azure
+If you share your pcs stonith show output, I can verify 100% whether your fencing is correctly configured or risky 👍
+
+
+[root@rocky-node1 ~]# pcs stonith show
+Error: This command has been replaced with 'pcs stonith status'. See 'man pcs' -> Changes in pcs-0.11.
+
+Good catch 👍 — you’re using a newer PCS version (0.11+), where some commands changed.
+
+Let’s use the correct commands now.
+
+✅ 1. Check fencing device (NEW command)
+pcs stonith status
+👉 This replaces pcs stonith show
+
+You should see something like:
+
+* fence-azure (stonith:fence_azure_arm): Started rocky-node1
+✅ 2. Check fencing configuration (VERY IMPORTANT)
+pcs stonith config
+👉 This shows full details, including:
+
+pcmk_host_list
+
+Azure parameters
+
+Credentials
+
+Example:
+
+Resource: fence-azure (class=stonith type=fence_azure_arm)
+  Attributes:
+    pcmk_host_list="rocky-node1,rocky-node2"
+✔ Ensure both nodes are listed
+
+✅ 3. Check if fencing is enabled globally
+pcs property show stonith-enabled
+Expected:
+
+stonith-enabled: true
+✅ 4. Quick combined verification
+Run all:
+
+pcs property show stonith-enabled
+pcs stonith status
+pcs stonith config
+🔍 What to verify
+✔ Case 1: Correct setup
+stonith-enabled: true
+
+Fencing device present
+
+pcmk_host_list="rocky-node1,rocky-node2"
+
+👉 ✅ Safe cluster
+
+❌ Case 2: Only one node listed
+Example:
+
+pcmk_host_list="rocky-node1"
+👉 Fix it:
+
+pcs stonith update fence-azure pcmk_host_list="rocky-node1,rocky-node2"
+❌ Case 3: Fencing disabled
+stonith-enabled: false
+👉 Fix:
+
+pcs property set stonith-enabled=true
+🧪 5. (Optional) Test fencing
+pcs stonith fence rocky-node2
+⚠️ Only do this in maintenance window
+
+🧾 Summary
+Purpose	Command
+Check status	pcs stonith status
+Check config	pcs stonith config
+Check enabled	pcs property show stonith-enabled
+If you paste output of:
+
+pcs stonith config
+I’ll verify if:
+
+✔ Both nodes are properly covered
+
+✔ Your Azure fencing is correctly configured
+
+✔ No hidden risk before you proceed
+
+👍
+
+
+[root@rocky-node1 ~]# pcs stonith config
+Resource: fence-azure (class=stonith type=fence_azure_arm)
+  Attributes: fence-azure-instance_attributes
+    msi=true
+    pcmk_host_map=node1:rocky-node1;node2:rocky-node2
+    pcmk_monitor_timeout=120
+    power_timeout=240
+    resourceGroup=rocky-node1_group
+    subscriptionId=35add80c-0a39-4201-be8a-57224a4e8b61
+    tenantId=64676518-79ce-415e-bea9-901ddae1c13e
+  Operations:
+    monitor: fence-azure-monitor-interval-60s
+      interval=60s
+
+Great — this is a good fencing configuration, but there’s one important detail to understand 👇
+
+🔍 Your Current Fencing Setup
+pcmk_host_map=node1:rocky-node1;node2:rocky-node2
+👉 This means:
+
+Azure VM node1 → cluster node rocky-node1
+
+Azure VM node2 → cluster node rocky-node2
+
+✔ So yes — both nodes are covered by fencing ✅
+
+⚠️ Important Observation
+You are using:
+
+pcmk_host_map (mapping-based fencing)
+
+Instead of:
+
+pcmk_host_list
+
+👉 This is perfectly valid for Azure fencing, but:
+
+🔥 Key Difference
+Parameter	Purpose
+pcmk_host_map	Maps cluster node → Azure VM name
+pcmk_host_list	Simple list of nodes
+👉 In your case, mapping is required, so your config is correct 👍
+
+✅ Final Validation Checklist
+✔ 1. Fencing enabled?
+Run:
+
+pcs property show stonith-enabled
+Must be:
+
+stonith-enabled: true
+✔ 2. Device running?
+From your earlier output:
+
+fence-azure: Started rocky-node1
+✔ OK
+
+✔ 3. Both nodes covered?
+✔ Yes (via pcmk_host_map)
+
+⚠️ VERY IMPORTANT (Since You Are Removing node2)
+After removing rocky-node2, you MUST update this config
+
+🚨 Required Change After Removal
+Update fencing to only include node1:
+
+pcs stonith update fence-azure pcmk_host_map="node1:rocky-node1"
+❗ Why this is critical
+If you don’t update:
+
+Cluster may try to fence non-existing node
+
+Can cause:
+
+Delays
+
+Fencing failures
+
+Resource issues
+
+🧪 Optional (Best Practice Test)
+Test fencing (careful):
+
+pcs stonith fence rocky-node2
+👉 Should reboot node2 (if still exists)
+
+🧾 Final Summary
+Check	Status
+Fencing configured	✅ Yes
+Both nodes covered	✅ Yes
+Azure mapping correct	✅ Yes
+Action needed	⚠️ Update after node removal
+👍 My Recommendation
+You are in a good state right now.
+
+👉 Next steps safely:
+
+Remove rocky-node2 (force if needed)
+
+Update fencing config
+
+Then add new node
+
+If you want, I can:
+👉 Validate your cluster after removal
+👉 Or give you exact safe sequence (zero downtime) for node replacement 👍
+
+
+
+
