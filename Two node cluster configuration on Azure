@@ -1,6 +1,10 @@
+1. Install Auzre Cli on any one node.
 
+2. Add role 'Virtual Machine contributor' to both nodes.
 
-[root@rocky-node1 yum.repos.d]# az login --identity
+3. Once it is done, check the fillwoing command, you should be able to get the identitity.
+
+[root@rocky-node1 ]# az login --identity
 [
   {
     "environmentName": "AzureCloud",
@@ -18,20 +22,18 @@
     }
   }
 ]
-[root@rocky-node1 yum.repos.d]#
-[root@rocky-node1 yum.repos.d]# az account list -o table
+
+
+[root@rocky-node1 ]# az account list -o table
 Name                       CloudName    SubscriptionId                        State    IsDefault
 -------------------------  -----------  ------------------------------------  -------  -----------
 N/A(tenant level account)  AzureCloud   64676518-79ce-415e-bea9-901ddae1c13e  Enabled  False
 Azure subscription 1       AzureCloud   35add80c-0a39-4201-be8a-57224a4e8b61  Enabled  True
 [root@rocky-node1 yum.repos.d]#
 
+4. Create Shared disks for app & attach it to both nodes 
 
-
-az disk create --resource-group rocky-node1_group --name cluster-shared-disk01 --location "East Asia (Zone 1)" --sku "Azure subscription 1"  --size-gb 10gb --max-shares 2
-
-
-az disk create \
+[root@rocky-node1 ]# az disk create \
   --resource-group rocky-node1_group \
   --name cluster-shared-disk03 \
   --location eastasia \
@@ -50,25 +52,47 @@ az disk create \
   --max-shares 2
 
 
-
-az vm disk attach \
+[root@rocky-node1 ]# az vm disk attach \
   --resource-group rocky-node1_group \
   --vm-name rocky-node1 \
   --name cluster-shared-disk04 \
-  --lun 12
+  --lun 10
 
 
-az vm disk attach \
+[root@rocky-node1 ]# az vm disk attach \
   --resource-group rocky-node1_group \
   --vm-name rocky-node2 \
   --name cluster-shared-disk04 \
-  --lun 12
-  
-  
-pcs cluster setup http_cluster --start rocky-node1 rocky-node2
+  --lun 10
 
+5. Similarly, create 2nd disk for DB and attached it  for nodes. 
 
-pcs stonith create fence-azure fence_azure_arm \
+6. Update /etc/hosts file on both nodes
+10.1.0.4 rocky-node1
+10.1.0.5 rocky-node2
+
+7. Install high availability (pacemaker) package on both nodes
+Pacemaker and other required packages are not available in default packages repositories of RHEL 9/8. So, we must enable high availability repository. Run following subscription manager command on both nodes.
+
+For RHEL 9 Servers
+
+# sudo subscription-manager repos --enable=rhel-9-for-x86_64-highavailability-rpms
+
+# dnf install pcs pacemaker fence-agents-all fence-agents-azure-arm.x86_64 -y
+
+8. Set password to hacluster and start pcsd service
+
+# sudo systemctl start pcsd.service
+# sudo systemctl enable pcsd.service
+
+9. Create high availability cluster on node1. 
+
+[root@rocky-node1 ]# pcs cluster setup http_cluster --start rocky-node1 rocky-node2
+[root@rocky-node1 ]# sudo pcs cluster enable --all
+
+10. Create Fencing device 
+
+[root@rocky-node1 ]# pcs stonith create fence-azure fence_azure_arm \
   pcmk_host_map="node1:rocky-node1;node2:rocky-node2" \
   resourceGroup="rocky-node1_group" \
   subscriptionId="35add80c-0a39-4201-be8a-57224a4e8b61" \
@@ -78,7 +102,9 @@ pcs stonith create fence-azure fence_azure_arm \
   pcmk_monitor_timeout=120 \
   op monitor interval=60s
 
+#10.  Create Share volume groups, command to be run from any node1.
 
+[root@rocky-node1 ~]# lsscsi -si
 [1:0:0:10]   disk    Msft     Virtual Disk     1.0   /dev/sdc   3600224804f692fd379cbeeefb8a0c19f  10.7GB
 [1:0:0:11]   disk    Msft     Virtual Disk     1.0   /dev/sdd   360022480690694bae28e57e38efdc4ae  16.1GB
 
@@ -86,11 +112,9 @@ pcs stonith create fence-azure fence_azure_arm \
 [root@rocky-node2 ~]# lsscsi -si
 [0:0:0:10]   disk    Msft     Virtual Disk     1.0   /dev/sdc   3600224804f692fd379cbeeefb8a0c19f  10.7GB
 [0:0:0:11]   disk    Msft     Virtual Disk     1.0   /dev/sdd   360022480690694bae28e57e38efdc4ae  16.1GB
-[1:0:0:0]    disk    Msft     Virtual Disk     1.0   /dev/sda   360022480bba07386b2728019c0273c3a  10.7GB
-[1:0:0:1]    disk    Msft     Virtual Disk     1.0   /dev/sdb   3600224808d24e97c8cdc15f1d302a5a7  17.1GB
-[1:0:0:2]    cd/dvd  Msft     Virtual DVD-ROM  1.0   /dev/sr0   14d534654202020207305e3437703544694957d7ced624a7d   643kB
 
-[root@rocky-node1 yum.repos.d]# vgs
+
+[root@rocky-node1 ~]#  vgs
   VG     #PV #LV #SN Attr   VSize   VFree
   vg_app   1   1   0 wz--n- <10.00g  <5.00g
   vg_db    1   1   0 wz--n- <15.00g <10.00g
