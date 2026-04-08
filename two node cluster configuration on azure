@@ -1,0 +1,223 @@
+
+
+[root@rocky-node1 yum.repos.d]# az login --identity
+[
+  {
+    "environmentName": "AzureCloud",
+    "homeTenantId": "64676518-79ce-415e-bea9-901ddae1c13e",
+    "id": "35add80c-0a39-4201-be8a-57224a4e8b61",
+    "isDefault": true,
+    "managedByTenants": [],
+    "name": "Azure subscription 1",
+    "state": "Enabled",
+    "tenantId": "64676518-79ce-415e-bea9-901ddae1c13e",
+    "user": {
+      "assignedIdentityInfo": "MSI",
+      "name": "systemAssignedIdentity",
+      "type": "servicePrincipal"
+    }
+  }
+]
+[root@rocky-node1 yum.repos.d]#
+[root@rocky-node1 yum.repos.d]# az account list -o table
+Name                       CloudName    SubscriptionId                        State    IsDefault
+-------------------------  -----------  ------------------------------------  -------  -----------
+N/A(tenant level account)  AzureCloud   64676518-79ce-415e-bea9-901ddae1c13e  Enabled  False
+Azure subscription 1       AzureCloud   35add80c-0a39-4201-be8a-57224a4e8b61  Enabled  True
+[root@rocky-node1 yum.repos.d]#
+
+
+
+az disk create --resource-group rocky-node1_group --name cluster-shared-disk01 --location "East Asia (Zone 1)" --sku "Azure subscription 1"  --size-gb 10gb --max-shares 2
+
+
+az disk create \
+  --resource-group rocky-node1_group \
+  --name cluster-shared-disk03 \
+  --location eastasia \
+  --zone 1 \
+  --sku Premium_LRS \
+  --size-gb 15 \
+  --max-shares 2
+  
+  az disk create \
+  --resource-group rocky-node1_group \
+  --name cluster-shared-disk04 \
+  --location eastasia \
+  --zone 1 \
+  --sku Premium_LRS \
+  --size-gb 10 \
+  --max-shares 2
+
+
+
+az vm disk attach \
+  --resource-group rocky-node1_group \
+  --vm-name rocky-node1 \
+  --name cluster-shared-disk04 \
+  --lun 12
+
+
+az vm disk attach \
+  --resource-group rocky-node1_group \
+  --vm-name rocky-node2 \
+  --name cluster-shared-disk04 \
+  --lun 12
+  
+  
+pcs cluster setup http_cluster --start rocky-node1 rocky-node2
+
+
+pcs stonith create fence-azure fence_azure_arm \
+  pcmk_host_map="node1:rocky-node1;node2:rocky-node2" \
+  resourceGroup="rocky-node1_group" \
+  subscriptionId="35add80c-0a39-4201-be8a-57224a4e8b61" \
+  tenantId="64676518-79ce-415e-bea9-901ddae1c13e" \
+  msi="true" \
+  power_timeout=240 \
+  pcmk_monitor_timeout=120 \
+  op monitor interval=60s
+
+
+[1:0:0:10]   disk    Msft     Virtual Disk     1.0   /dev/sdc   3600224804f692fd379cbeeefb8a0c19f  10.7GB
+[1:0:0:11]   disk    Msft     Virtual Disk     1.0   /dev/sdd   360022480690694bae28e57e38efdc4ae  16.1GB
+
+
+[root@rocky-node2 ~]# lsscsi -si
+[0:0:0:10]   disk    Msft     Virtual Disk     1.0   /dev/sdc   3600224804f692fd379cbeeefb8a0c19f  10.7GB
+[0:0:0:11]   disk    Msft     Virtual Disk     1.0   /dev/sdd   360022480690694bae28e57e38efdc4ae  16.1GB
+[1:0:0:0]    disk    Msft     Virtual Disk     1.0   /dev/sda   360022480bba07386b2728019c0273c3a  10.7GB
+[1:0:0:1]    disk    Msft     Virtual Disk     1.0   /dev/sdb   3600224808d24e97c8cdc15f1d302a5a7  17.1GB
+[1:0:0:2]    cd/dvd  Msft     Virtual DVD-ROM  1.0   /dev/sr0   14d534654202020207305e3437703544694957d7ced624a7d   643kB
+
+[root@rocky-node1 yum.repos.d]# vgs
+  VG     #PV #LV #SN Attr   VSize   VFree
+  vg_app   1   1   0 wz--n- <10.00g  <5.00g
+  vg_db    1   1   0 wz--n- <15.00g <10.00g
+
+
+pcs resource create ha_vg_app ocf:heartbeat:LVM-activate vgname=vg_app vg_access_mode=system_id --group apachegroup
+
+pcs resource create ha_vg_app_fs Filesystem device="/dev/vg_app/lv_app" directory="/var/www" fstype="xfs" --group apachegroup
+
+pcs resource create VirtualIP IPaddr2 ip=10.1.0.6 cidr_netmask=24 --group apachegroup
+
+pcs resource create Website apache configfile="/etc/httpd/conf/httpd.conf" statusurl="http://127.0.0.1/server-status" --group apachegroup
+
+
+pcs resource create ha_vg_db ocf:heartbeat:LVM-activate vgname=vg_db vg_access_mode=system_id --group dbgroup
+
+pcs resource create ha_vg_db_fs Filesystem device="/dev/vg_db/lv_db" directory="/data fstype="xfs" --group dbgroup
+
+pcs resource create VirtualIP IPaddr2 ip=10.1.0.7 cidr_netmask=24 --group dbgroup
+
+
+Failed Resource Actions:
+  * fence-azure start on rocky-node2 returned 'error'
+  * ha_vg_app start on rocky-node2 returned 'error' (vg_app: failed to activate.)
+
+
+pcs resource cleanup apachegroup
+
+more explicitly:
+pcs resource cleanup ha_vg_app
+
+
+pcs stonith create fence-azure fence_azure_arm \
+  pcmk_host_map="node1:rocky-node1;node2:rocky-node2" \
+  resourceGroup="rocky-node1_group" \
+  subscriptionId="35add80c-0a39-4201-be8a-57224a4e8b61" \
+  tenantId="64676518-79ce-415e-bea9-901ddae1c13e" \
+  msi="true" \
+  power_timeout=240 \
+  pcmk_monitor_timeout=120 \
+  op monitor interval=60s
+  
+  
+fence_azure_arm --action=list \
+  --resourceGroup=rocky-node1_group" \
+  --subscriptionId=35add80c-0a39-4201-be8a-57224a4e8b61 \
+  --tenantId=64676518-79ce-415e-bea9-901ddae1c13e" \
+  --login=<APP_ID> \
+  --passwd=<SECRET> -v
+  
+  
+fence_azure_arm --action=list   --resourceGroup=rocky-node1_group   --subscriptionId=35add80c-0a39-4201-be8a-57224a4e8b61   --tenantId=64676518-79ce-415e-bea9-901ddae1c13e   --msi -v
+
+
+  Started resource 'apachegroup' prefers node 'rocky-node2' with score INFINITY. How to clear this constaint
+
+That line:
+
+Started resource 'apachegroup' prefers node 'rocky-node2' with score INFINITY
+
+is a temporary (runtime) constraint created by Pacemaker (called a cli-prefer constraint). You need to remove it explicitly.
+
+
+Run:
+
+pcs constraint --full
+
+You will see something like:
+
+Location Constraints:
+  Resource: apachegroup
+    Enabled on:
+      rocky-node1 (score:100)
+      rocky-node2 (score:INFINITY) (id: cli-prefer-apachegroup)
+
+👉 Note the ID (example: cli-prefer-apachegroup)
+
+
+
+Started resource 'apachegroup' prefers node 'rocky-node2' with score INFINITY
+⚠️ Important (to avoid it coming back)
+
+This constraint was auto-created due to manual move or failover behavior.
+
+To prevent it again:
+
+✔ Set stickiness
+pcs resource defaults resource-stickiness=1000
+
+OR stricter:
+
+pcs resource defaults resource-stickiness=INFINITY
+🧠 Why this happens
+
+Whenever you run:
+
+pcs resource move apachegroup
+
+Pacemaker creates this:
+
+cli-prefer-apachegroup (INFINITY)
+
+👉 It stays until you clear or delete it
+
+✅ Alternative shortcut (easier)
+
+Instead of finding ID, you can run:
+
+pcs resource clear apachegroup
+
+👉 This will:
+
+Remove all temporary constraints
+Clean fail counts
+Reset placement
+🚀 Recommended way (best practice)
+
+Use this:
+
+pcs resource clear apachegroup
+
+✔ Simple
+✔ Safe
+✔ Removes all runtime constraints
+
+👍 Final answer
+
+👉 To clear that constraint:
+
+Best command:
