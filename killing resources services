@@ -1,0 +1,275 @@
+[Thu Apr  9 07:18:56 2026] XFS (dm-0): Ending clean mount
+[root@rocky-node1 ~]# df -hP
+Filesystem                 Size  Used Avail Use% Mounted on
+devtmpfs                   4.0M     0  4.0M   0% /dev
+tmpfs                      3.8G   33M  3.7G   1% /dev/shm
+tmpfs                      1.5G  8.6M  1.5G   1% /run
+efivarfs                   128K   38K   86K  31% /sys/firmware/efi/efivars
+/dev/sda4                  8.9G  2.7G  6.2G  31% /
+/dev/sda3                  936M  262M  675M  28% /boot
+/dev/sda2                  100M   11M   90M  11% /boot/efi
+/dev/sdb1                   16G   36K   15G   1% /mnt
+tmpfs                      763M     0  763M   0% /run/user/1000
+/dev/mapper/vg_app-lv_app   17G  155M   17G   1% /var/www
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs resource meta Website
+[root@rocky-node1 ~]# pcs resource config Website
+Resource: Website (class=ocf provider=heartbeat type=apache)
+  Attributes: Website-instance_attributes
+    configfile=/etc/httpd/conf/httpd.conf
+    statusurl=http://127.0.0.1/server-status
+  Operations:
+    monitor: Website-monitor-interval-10s
+      interval=10s timeout=20s
+    start: Website-start-interval-0s
+      interval=0s timeout=40s
+    stop: Website-stop-interval-0s
+      interval=0s timeout=60s
+[root@rocky-node1 ~]# pcs resource meta Website failure-timeout=60s
+[root@rocky-node1 ~]# pcs resource config Website
+Resource: Website (class=ocf provider=heartbeat type=apache)
+  Attributes: Website-instance_attributes
+    configfile=/etc/httpd/conf/httpd.conf
+    statusurl=http://127.0.0.1/server-status
+  Meta Attributes: Website-meta_attributes
+    failure-timeout=60s
+  Operations:
+    monitor: Website-monitor-interval-10s
+      interval=10s timeout=20s
+    start: Website-start-interval-0s
+      interval=0s timeout=40s
+    stop: Website-stop-interval-0s
+      interval=0s timeout=60s
+[root@rocky-node1 ~]# pcs resource config Website^C
+[root@rocky-node1 ~]# ps -aef | grep -i http
+root       32789       1  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32792   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32794   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32796   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32797   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+root       35265   20306  0 07:21 pts/0    00:00:00 grep --color=auto -i http
+[root@rocky-node1 ~]# kill -9 32789 32792 ^C
+[root@rocky-node1 ~]# ps -aef | grep -i http
+root       32789       1  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32792   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32794   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32796   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32797   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+root       35375   20306  0 07:21 pts/0    00:00:00 grep --color=auto -i http
+[root@rocky-node1 ~]# ps -aef | grep -i httpd
+root       32789       1  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32792   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32794   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32796   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32797   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+root       35377   20306  0 07:21 pts/0    00:00:00 grep --color=auto -i httpd
+[root@rocky-node1 ~]# ps -aef | grep -i httpd | grep -v grep
+root       32789       1  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32792   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32794   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32796   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     32797   32789  0 07:18 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+[root@rocky-node1 ~]# ps -aef | grep -i httpd | grep -v grep | awk '{ print "kill -9",$2 }'
+kill -9 32789
+kill -9 32792
+kill -9 32794
+kill -9 32796
+kill -9 32797
+[root@rocky-node1 ~]# ps -aef | grep -i httpd | grep -v grep | awk '{ print "kill -9",$2 }' | sh
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node2 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Thu Apr  9 07:22:17 2026 on rocky-node1
+  * Last change:  Thu Apr  9 07:20:57 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node2
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node2
+
+Failed Resource Actions:
+  * ha_vg_app_fs 20s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:18:55 2026
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node2 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Thu Apr  9 07:22:20 2026 on rocky-node1
+  * Last change:  Thu Apr  9 07:20:57 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node2
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node2
+
+Failed Resource Actions:
+  * ha_vg_app_fs 20s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:18:55 2026
+  * Website 10s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:22:18 2026
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+[root@rocky-node1 ~]# ps -aef | grep -i http
+root       35887       1  0 07:22 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     35889   35887  0 07:22 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     35892   35887  0 07:22 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     35894   35887  0 07:22 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+apache     35895   35887  0 07:22 ?        00:00:00 /sbin/httpd -DSTATUS -f /etc/httpd/conf/httpd.conf -c PidFile /var/run/httpd-Website.pid
+root       36202   20306  0 07:22 pts/0    00:00:00 grep --color=auto -i http
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node2 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Thu Apr  9 07:22:30 2026 on rocky-node1
+  * Last change:  Thu Apr  9 07:20:57 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node2
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node1
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node1
+    * Website   (ocf:heartbeat:apache):  Started rocky-node1
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node2
+
+Failed Resource Actions:
+  * ha_vg_app_fs 20s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:18:55 2026
+  * Website 10s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:22:18 2026
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+[root@rocky-node1 ~]# pcs resource meta Website migration-threshold=1
+[root@rocky-node1 ~]# pcs resource config Website
+Resource: Website (class=ocf provider=heartbeat type=apache)
+  Attributes: Website-instance_attributes
+    configfile=/etc/httpd/conf/httpd.conf
+    statusurl=http://127.0.0.1/server-status
+  Meta Attributes: Website-meta_attributes
+    failure-timeout=60s
+    migration-threshold=1
+  Operations:
+    monitor: Website-monitor-interval-10s
+      interval=10s timeout=20s
+    start: Website-start-interval-0s
+      interval=0s timeout=40s
+    stop: Website-stop-interval-0s
+      interval=0s timeout=60s
+[root@rocky-node1 ~]# ps -aef | grep -i httpd | grep -v grep | awk '{ print "kill -9",$2 }' | sh
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]#
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node2 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Thu Apr  9 07:22:58 2026 on rocky-node1
+  * Last change:  Thu Apr  9 07:22:38 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node2
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node2
+    * Website   (ocf:heartbeat:apache):  Started rocky-node2
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node2
+
+Failed Resource Actions:
+  * ha_vg_app_fs 20s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:18:55 2026
+  * Website 10s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:22:18 2026
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+[root@rocky-node1 ~]# pcs status
+Cluster name: http_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node2 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Thu Apr  9 07:23:01 2026 on rocky-node1
+  * Last change:  Thu Apr  9 07:22:38 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-azure (stonith:fence_azure_arm):       Started rocky-node2
+  * Resource Group: apachegroup:
+    * ha_vg_app (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_app_fs      (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIP (ocf:heartbeat:IPaddr2):         Started rocky-node2
+    * Website   (ocf:heartbeat:apache):  Started rocky-node2
+  * Resource Group: dbgroup:
+    * ha_vg_db  (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * ha_vg_db_fs       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * VirtualIPDB       (ocf:heartbeat:IPaddr2):         Started rocky-node2
+
+Failed Resource Actions:
+  * ha_vg_app_fs 20s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:18:55 2026
+  * Website 10s-interval monitor on rocky-node1 returned 'not running' at Thu Apr  9 07:22:18 2026
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: inactive/disabled
+[root@rocky-node1 ~]# pcs resource meta W^Csite migration-threshold
+[root@rocky-node1 ~]# pcs resource meta Website migration-threshold=
+pcs resource meta Website failure-timeout=
+[root@rocky-node1 ~]# pcs resource config Website^C
+[root@rocky-node1 ~]#
