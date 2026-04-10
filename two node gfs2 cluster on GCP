@@ -1,0 +1,974 @@
+
+
+GFS cluster configuration on GCP
+
+✅ 1. Install Fence Agent for GCP
+
+dnf install fence-agents-gce
+
+On both cluster nodes:
+
+dnf install -y fence-agents-gce
+✅ 2. Create Service Account in GCP
+
+You need a service account with permissions to control VM power.
+
+Steps:
+Go to **Google Cloud Platform Console
+Navigate to:
+IAM & Admin → Service Accounts
+Create service account (example: fence-gcp-sa)
+Assign role:
+Compute Instance Admin (v1)
+
+✅ 3. Attach Service Account to VMs Using Console
+
+Attach this service account to both clus
+
+🔹 Steps:
+Go to:
+Compute Engine → VM Instances
+Select your VM (e.g., rocky-node1)
+Click Stop
+⚠️ You must stop the VM to change service account
+Click Edit
+Scroll to:
+Identity and API access
+Set:
+Service Account → select your fencing service account
+(example: fence-gcp-sa@project-id.iam.gserviceaccount.com)
+Access Scopes →
+👉 Select: Allow full access to all Cloud APIs
+Click Save
+Start the VM again
+
+✅ 4. Configure Required Scope
+Compute Engine → VM Instances
+Stop the VM
+Click Edit
+Under Identity and API access:
+Service Account: (your fencing SA)
+Access Scopes:
+👉 Select Allow full access to all Cloud APIs
+
+To find project name
+[root@rocky-node1 tmp]# curl -H "Metadata-Flavor: Google" \
+http://metadata.google.internal/computeMetadata/v1/project/project-id
+
+
+[root@rocky-node1 ~]# vi /etc/hosts 
+[root@rocky-node1 ~]# fence_gce --action=list \
+  --project=project-79e66482-b6e9-4d7e-bf4 \
+  --zone=us-central1-a
+3747283291514481309,rocky-node1
+2082690551839533954,rocky-node2
+
+Above output shows, IAM role and polcies are configured correctly.
+
+Configure /etc/hostst
+
+
+
+[gfs2]
+name=Local BaseOS
+baseurl=file:///iso1
+enabled=1
+gpgcheck=0
+
+
+[pcs]
+name=Local AppStream
+baseurl=file:///iso2
+enabled=1
+gpgcheck=0
+
+dnf install pcs pacemaker -y
+
+ Set password to hacluster and start pcsd service
+Set password to hacluster user on both servers, run following echo command
+
+$ echo "<Enter-Password>" | sudo passwd --stdin hacluster
+Execute the following command to start and enable cluster service on both servers
+
+systemctl start pcsd.service
+systemctl enable pcsd.service
+
+[root@rocky-node1 yum.repos.d]# pcs host auth rocky-node1 rocky-node2
+Username: hacluster
+Password: 
+rocky-node1: Authorized
+rocky-node2: Authorized
+
+pcs cluster setup gfs2_cluster --start rocky-node1 rocky-node2
+
+pcs stonith create fence-gcp fence_gce \
+  pcmk_host_map="rocky-node1:rocky-node1;rocky-node2:rocky-node2" \
+  zone=us-central1-a \
+  project=project-79e66482-b6e9-4d7e-bf4
+  
+  
+[root@rocky-node1 yum.repos.d]# corosync-quorumtool -s
+Quorum information
+------------------
+Date:             Fri Apr 10 06:44:47 2026
+Quorum provider:  corosync_votequorum
+Nodes:            2
+Node ID:          1
+Ring ID:          1.9
+Quorate:          Yes
+
+Votequorum information
+----------------------
+Expected votes:   2
+Highest expected: 2
+Total votes:      2
+Quorum:           1  
+Flags:            2Node Quorate WaitForAll 
+
+Membership information
+----------------------
+    Nodeid      Votes Name
+         1          1 rocky-node1 (local)
+         2          1 rocky-node2
+[root@rocky-node1 yum.repos.d]# 
+[root@rocky-node1 yum.repos.d]# pcs status
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 06:45:05 2026 on rocky-node1
+  * Last change:  Fri Apr 10 06:42:51 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 1 resource instance configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 yum.repos.d]#  pcs property list --all|grep stonith
+Deprecation Warning: This command is deprecated and will be removed. Please use 'pcs property config' instead.
+  stonith-action=reboot (default)
+  stonith-enabled=true (default)
+  stonith-max-attempts=10 (default)
+  stonith-timeout=60s (default)
+  stonith-watchdog-timeout=0 (default)
+[root@rocky-node1 yum.repos.d]# 
+
+
+dnf install lvm2-lockd gfs2-utils dlm
+
+
+## On both nodes of the cluster, set the use_lvmlockd configuration option in the /etc/lvm/lvm.conf file to use_lvmlockd=1.
+
+...
+use_lvmlockd = 1
+...
+
+
+Set the global Pacemaker parameter no-quorum-policy to freeze.
+
+Note
+By default, the value of no-quorum-policy is set to stop, indicating that once quorum is lost, all the resources on the remaining partition will immediately be stopped. Typically this default is the safest and most optimal option, but unlike most resources, GFS2 requires quorum to function. When quorum is lost both the applications using the GFS2 mounts and the GFS2 mount itself cannot be correctly stopped. Any attempts to stop these resources without quorum will fail which will ultimately result in the entire cluster being fenced every time quorum is lost.
+
+To address this situation, set no-quorum-policy to freeze when GFS2 is in use. This means that when quorum is lost, the remaining partition will do nothing until quorum is regained.
+
+[root@z1 ~]# pcs property set no-quorum-policy=freeze
+
+[root@rocky-node1 yum.repos.d]# pcs property defaults | grep no-qu
+no-quorum-policy=stop
+
+
+## Set up a dlm resource. This is a required dependency for configuring a GFS2 file system in a cluster. This example creates the dlm resource as part of a resource group named locking.
+
+[root@z1 ~]# pcs resource create dlm --group locking ocf:pacemaker:controld op monitor interval=30s on-fail=fence
+
+Clone the locking resource group so that the resource group can be active on both nodes of the cluster.
+
+[root@z1 ~]# pcs resource clone locking interleave=true
+
+
+Set up an lvmlockd resource as part of the locking resource group.
+
+[root@z1 ~]# pcs resource create lvmlockd --group locking ocf:heartbeat:lvmlockd op monitor interval=30s on-fail=fence
+
+[root@rocky-node1 yum.repos.d]# pcs status --full
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (1) (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 06:57:07 2026 on rocky-node1
+  * Last change:  Fri Apr 10 06:56:22 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 5 resource instances configured
+
+Node List:
+  * Node rocky-node1 (1): online, feature set 3.19.6
+  * Node rocky-node2 (2): online, feature set 3.19.6
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Resource Group: locking:0:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node2
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node2
+    * Resource Group: locking:1:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node1
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node1
+
+Migration Summary:
+
+Tickets:
+
+PCSD Status:
+  rocky-node1: Online
+  rocky-node2: Online
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+  
+Locking resource has been started on both nodes. ==> IMP step completed
+
+On one node of the cluster, create two shared volume groups. One volume group will contain two GFS2 file systems, and the other volume group will contain one GFS2 file system.
+
+vgcreate --shared shared_vg1 /dev/sdb
+vgcreate --shared shared_vg2 /dev/sdc
+
+Node2
+[root@z2 ~]# lvmdevices --adddev /dev/sdb
+[root@z2 ~]# lvmdevices --adddev /dev/sdc
+
+Start the lock manager for each of the shared volume groups.
+
+[root@z2 ~]# vgchange --lockstart shared_vg1
+  VG shared_vg1 starting dlm lockspace
+  Starting locking.  Waiting until locks are ready...
+[root@z2 ~]# vgchange --lockstart shared_vg2
+  VG shared_vg2 starting dlm lockspace
+  Starting locking.  Waiting until locks are ready...
+
+
+On one node in the cluster, create the shared logical volumes and format the volumes with a GFS2 file system. One journal is required for each node that mounts the file system. Ensure that you create enough journals for each of the nodes in your cluster. The format of the lock table name is ClusterName:FSName where ClusterName is the name of the cluster for which the GFS2 file system is being created and FSName is the file system name, which must be unique for all lock_dlm file systems over the cluster.
+
+lvcreate --activate sy -L1G -n shared_lv1 shared_vg1
+  Logical volume "shared_lv1" created.
+lvcreate --activate sy -L1G -n shared_lv2 shared_vg1
+  Logical volume "shared_lv2" created.
+lvcreate --activate sy -L2G -n shared_lv1 shared_vg2
+  Logical volume "shared_lv1" created.
+
+mkfs.gfs2 -j2 -p lock_dlm -t gfs2_cluster:gfs2-demo1 /dev/shared_vg1/shared_lv1
+mkfs.gfs2 -j2 -p lock_dlm -t gfs2_cluster:gfs2-demo2 /dev/shared_vg1/shared_lv2
+mkfs.gfs2 -j2 -p lock_dlm -t gfs2_cluster:gfs2-demo3 /dev/shared_vg2/shared_lv1
+
+
+Create an LVM-activate resource for each logical volume to automatically activate that logical volume on all nodes.
+
+Create an LVM-activate resource named sharedlv1 for the logical volume shared_lv1 in volume group shared_vg1. This command also creates the resource group shared_vg1 that includes the resource. In this example, the resource group has the same name as the shared volume group that includes the logical volume.
+
+
+pcs resource create sharedlv1 --group shared_vg1 ocf:heartbeat:LVM-activate lvname=shared_lv1 vgname=shared_vg1 activation_mode=shared vg_access_mode=lvmlockd
+pcs resource create sharedlv2 --group shared_vg1 ocf:heartbeat:LVM-activate lvname=shared_lv2 vgname=shared_vg1 activation_mode=shared vg_access_mode=lvmlockd
+pcs resource create sharedlv3 --group shared_vg2 ocf:heartbeat:LVM-activate lvname=shared_lv1 vgname=shared_vg2 activation_mode=shared vg_access_mode=lvmlockd
+
+
+[root@rocky-node1 yum.repos.d]# pcs status --full
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (1) (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 07:04:40 2026 on rocky-node1
+  * Last change:  Fri Apr 10 07:04:30 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 8 resource instances configured
+
+Node List:
+  * Node rocky-node1 (1): online, feature set 3.19.6
+  * Node rocky-node2 (2): online, feature set 3.19.6
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Resource Group: locking:0:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node2
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node2
+    * Resource Group: locking:1:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node1
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node1
+  * Resource Group: shared_vg1:
+    * sharedlv1 (ocf:heartbeat:LVM-activate):    Started rocky-node1
+    * sharedlv2 (ocf:heartbeat:LVM-activate):    Started rocky-node1
+  * Resource Group: shared_vg2:
+    * sharedlv3 (ocf:heartbeat:LVM-activate):    Started rocky-node1
+
+Migration Summary:
+
+Tickets:
+
+PCSD Status:
+  rocky-node1: Online
+  rocky-node2: Online
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 yum.repos.d]# 
+
+Clone the two new resource groups.
+
+pcs resource clone shared_vg1 interleave=true
+pcs resource clone shared_vg2 interleave=true
+
+
+Configure ordering constraints to ensure that the locking resource group that includes the dlm and lvmlockd resources starts first.
+
+[root@z1 ~]# pcs constraint order start locking-clone then shared_vg1-clone
+Adding locking-clone shared_vg1-clone (kind: Mandatory) (Options: first-action=start then-action=start)
+[root@z1 ~]# pcs constraint order start locking-clone then shared_vg2-clone
+Adding locking-clone shared_vg2-clone (kind: Mandatory) (Options: first-action=start then-action=start)
+
+
+Configure colocation constraints to ensure that the vg1 and vg2 resource groups start on the same node as the locking resource group.
+
+[root@z1 ~]# pcs constraint colocation add shared_vg1-clone with locking-clone
+[root@z1 ~]# pcs constraint colocation add shared_vg2-clone with locking-clone
+
+[root@rocky-node1 yum.repos.d]# pcs constraint
+Colocation Constraints:
+  resource 'shared_vg1-clone' with resource 'locking-clone'
+    score=INFINITY
+  resource 'shared_vg2-clone' with resource 'locking-clone'
+    score=INFINITY
+Order Constraints:
+  start resource 'locking-clone' then start resource 'shared_vg1-clone'
+  start resource 'locking-clone' then start resource 'shared_vg2-clone'
+  
+  
+  [root@rocky-node1 yum.repos.d]# lvs
+  LV         VG         Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  shared_lv1 shared_vg1 -wi-a----- 1.00g                                                    
+  shared_lv2 shared_vg1 -wi-a----- 1.00g                                                    
+  shared_lv1 shared_vg2 -wi-a----- 2.00g                                                    
+[root@rocky-node1 yum.repos.d]# 
+[root@rocky-node1 yum.repos.d]# pvs
+  PV         VG         Fmt  Attr PSize  PFree 
+  /dev/sdb   shared_vg1 lvm2 a--  <5.00g <3.00g
+  /dev/sdc   shared_vg2 lvm2 a--  <5.00g <3.00g
+[root@rocky-node1 yum.repos.d]# 
+[root@rocky-node1 yum.repos.d]# 
+[root@rocky-node1 yum.repos.d]# vgs
+  VG         #PV #LV #SN Attr   VSize  VFree 
+  shared_vg1   1   2   0 wz--ns <5.00g <3.00g
+  shared_vg2   1   1   0 wz--ns <5.00g <3.00g
+  
+  
+  Create a file system resource to automatically mount each GFS2 file system on all nodes.
+
+You should not add the file system to the /etc/fstab file because it will be managed as a Pacemaker cluster resource. Mount options can be specified as part of the resource configuration with options=options. Run the pcs resource describe Filesystem command to display the full configuration options.
+
+The following commands create the file system resources. These commands add each resource to the resource group that includes the logical volume resource for that file system.
+
+[root@z1 ~]# pcs resource create sharedfs1 --group shared_vg1 ocf:heartbeat:Filesystem device="/dev/shared_vg1/shared_lv1" directory="/gfs1" fstype="gfs2" options=noatime op monitor interval=10s on-fail=fence
+[root@z1 ~]# pcs resource create sharedfs2 --group shared_vg1 ocf:heartbeat:Filesystem device="/dev/shared_vg1/shared_lv2" directory="/gfs2" fstype="gfs2" options=noatime op monitor interval=10s on-fail=fence
+[root@z1 ~]# pcs resource create sharedfs3 --group shared_vg2 ocf:heartbeat:Filesystem device="/dev/shared_vg2/shared_lv1" directory="/gfs3" fstype="gfs2" options=noatime op monitor interval=10s on-fail=fence
+
+
+[root@rocky-node1 ~]# pcs status --full
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (1) (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 07:18:04 2026 on rocky-node1
+  * Last change:  Fri Apr 10 07:17:49 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 17 resource instances configured
+
+Node List:
+  * Node rocky-node1 (1): online, feature set 3.19.6
+  * Node rocky-node2 (2): online, feature set 3.19.6
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Resource Group: locking:0:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node2
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node2
+    * Resource Group: locking:1:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node1
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node1
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Resource Group: shared_vg1:0:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node2
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg1:1:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node1
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node1
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Resource Group: shared_vg2:0:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg2:1:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node1
+
+Migration Summary:
+
+Tickets:
+
+PCSD Status:
+  rocky-node1: Online
+  rocky-node2: Online
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# 
+
+
+
+root@rocky-node1 gfs1]# lvextend -L+1G /dev/shared_vg1/shared_lv1
+  WARNING: extending LV with a shared lock, other hosts may require LV refresh.
+  Size of logical volume shared_vg1/shared_lv1 changed from 1.00 GiB (256 extents) to 2.00 GiB (512 extents).
+  Logical volume shared_vg1/shared_lv1 successfully resized.
+  Refreshing LV /dev//shared_vg1/shared_lv1 on other hosts...
+[root@rocky-node1 gfs1]# 
+[root@rocky-node1 gfs1]# df -hP
+Filesystem                         Size  Used Avail Use% Mounted on
+devtmpfs                           4.0M     0  4.0M   0% /dev
+tmpfs                              1.8G   76M  1.8G   5% /dev/shm
+tmpfs                              731M  8.7M  722M   2% /run
+efivarfs                           256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2                           20G  5.1G   15G  26% /
+/dev/sda1                          200M  7.1M  193M   4% /boot/efi
+tmpfs                              366M     0  366M   0% /run/user/1000
+/dev/loop0                          15M   15M     0 100% /iso1
+/dev/loop1                          13M   13M     0 100% /iso2
+/dev/mapper/shared_vg1-shared_lv1  1.0G   35M  990M   4% /gfs1
+/dev/mapper/shared_vg1-shared_lv2  1.0G   35M  990M   4% /gfs2
+/dev/mapper/shared_vg2-shared_lv1  2.0G   35M  2.0G   2% /gfs3
+
+root@rocky-node1 gfs1]# lvextend -L+1G /dev/shared_vg1/shared_lv1 ==> Validate if the LV size chnaged, then proceed with the grow_fs
+  WARNING: extending LV with a shared lock, other hosts may require LV refresh.
+  Size of logical volume shared_vg1/shared_lv1 changed from 1.00 GiB (256 extents) to 2.00 GiB (512 extents).
+  Logical volume shared_vg1/shared_lv1 successfully resized.
+  Refreshing LV /dev//shared_vg1/shared_lv1 on other hosts...
+
+[root@rocky-node1 gfs1]# gfs2_grow /gfs1
+Mount point: /gfs1
+Device: /dev/mapper/shared_vg1-shared_lv1
+Size: 262143 blocks
+Length: 524288 blocks
+The file system will grow by 1024MB.
+gfs2_grow complete.
+
+
+------------How to umount gfs ---
+[root@rocky-node1 ~]# pcs resource disable sharedfs3
+[root@rocky-node1 ~]# ps statu^C
+[root@rocky-node1 ~]# pcs status
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 08:50:54 2026 on rocky-node1
+  * Last change:  Fri Apr 10 08:50:48 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 17 resource instances configured (2 DISABLED)
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Resource Group: shared_vg2:0:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Stopped (disabled)
+    * Resource Group: shared_vg2:1:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Stopped (disabled)
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# df -hP
+Filesystem                         Size  Used Avail Use% Mounted on
+devtmpfs                           4.0M     0  4.0M   0% /dev
+tmpfs                              1.8G   73M  1.8G   4% /dev/shm
+tmpfs                              731M  8.7M  722M   2% /run
+efivarfs                           256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2                           20G  5.1G   15G  26% /
+/dev/sda1                          200M  7.1M  193M   4% /boot/efi
+/dev/loop0                          15M   15M     0 100% /iso1
+/dev/loop1                          13M   13M     0 100% /iso2
+/dev/mapper/shared_vg1-shared_lv1  2.0G   35M  2.0G   2% /gfs1
+/dev/mapper/shared_vg1-shared_lv2  2.0G   35M  2.0G   2% /gfs2
+tmpfs                              366M     0  366M   0% /run/user/1000
+[root@rocky-node1 ~]# pcs resource enable sharedfs3
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# df -hP
+Filesystem                         Size  Used Avail Use% Mounted on
+devtmpfs                           4.0M     0  4.0M   0% /dev
+tmpfs                              1.8G   76M  1.8G   5% /dev/shm
+tmpfs                              731M  8.7M  722M   2% /run
+efivarfs                           256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2                           20G  5.1G   15G  26% /
+/dev/sda1                          200M  7.1M  193M   4% /boot/efi
+/dev/loop0                          15M   15M     0 100% /iso1
+/dev/loop1                          13M   13M     0 100% /iso2
+/dev/mapper/shared_vg1-shared_lv1  2.0G   35M  2.0G   2% /gfs1
+/dev/mapper/shared_vg1-shared_lv2  2.0G   35M  2.0G   2% /gfs2
+tmpfs                              366M     0  366M   0% /run/user/1000
+/dev/mapper/shared_vg2-shared_lv1  2.0G   35M  2.0G   2% /gfs3
+[root@rocky-node1 ~]# 
+
+
+[root@rocky-node1 ~]# echo "- - -" > /sys/class/scsi_host/host1/scan 
+[root@rocky-node1 ~]# lsscsi -si
+[0:0:1:0]    disk    Google   PersistentDisk   1     /dev/sda   0Google_PersistentDisk_rocky-node1  21.4GB
+[1:0:0:0]    disk    LIO-ORG  shared_lun       4.0   /dev/sdb   36001405d25ecfc8c5224a6f98ed97f26  5.36GB
+[1:0:0:1]    disk    LIO-ORG  shared_lun2      4.0   /dev/sdc   360014058c48b93d973442d7a0b6a4e95  5.36GB
+[1:0:0:2]    disk    LIO-ORG  shared_lun3      4.0   /dev/sdd   3600140587379aa30990497bb20f23ff2  5.36GB
+[root@rocky-node1 ~]# vgs
+  VG         #PV #LV #SN Attr   VSize  VFree   
+  shared_vg1   1   2   0 wz--ns <5.00g 1020.00m
+  shared_vg2   1   1   0 wz--ns <5.00g   <3.00g
+[root@rocky-node1 ~]# vgextend ^C
+[root@rocky-node1 ~]# pvcreate /dev/sdd
+  Physical volume "/dev/sdd" successfully created.
+[root@rocky-node1 ~]# 
+
+root@rocky-node2 ~]# lvmdevices --adddev /dev/sdd
+[root@rocky-node2 ~]# 
+[root@rocky-node2 ~]# pvs
+  PV         VG         Fmt  Attr PSize  PFree   
+  /dev/sdb   shared_vg1 lvm2 a--  <5.00g 1020.00m
+  /dev/sdc   shared_vg2 lvm2 a--  <5.00g   <3.00g
+  /dev/sdd              lvm2 ---   5.00g    5.00g
+  
+  ### How to add new filesystem  ##############
+  
+  🧠 When Freeze Mode is NOT Required
+
+You can safely proceed without maintenance mode if you are:
+
+✅ Adding a new LUN / VG / LV
+✅ Creating a new GFS2 filesystem
+✅ Adding new PCS resources (LVM + Filesystem)
+✅ Not modifying existing running resources
+
+👉 In your case → No freeze needed
+
+🔴 When You SHOULD Use Maintenance Mode
+
+Use cluster freeze (maintenance mode) only when:
+
+Modifying existing GFS2 filesystem
+Extending/shrinking existing VG/LV used by cluster
+Changing resource configuration
+Troubleshooting or doing manual intervention
+Performing risky operations on production
+Command:
+
+
+N1
+[root@rocky-node1 ~]# pvcreate /dev/sde
+  Physical volume "/dev/sde" successfully created
+
+[root@rocky-node1 ~]# vgcreate --shared shared_vg3 /dev/sde
+  Volume group "shared_vg3" successfully created
+  VG shared_vg3 starting dlm lockspace
+  Starting locking.  Waiting until locks are ready...
+
+N2
+root@rocky-node2 ~]# lvmdevices --adddev /dev/sde
+
+[root@rocky-node2 ~]# vgchange --lockstart shared_vg3
+  VG shared_vg3 starting dlm lockspace
+  Starting locking.  Waiting until locks are ready...
+[root@rocky-node2 ~]# 
+
+N1
+lvcreate --activate sy -L1G -n shared_lv3 shared_vg3
+
+
+mkfs.gfs2 -j2 -p lock_dlm -t gfs2_cluster:gfs2-demo4 /dev/shared_vg3/shared_lv3
+
+pcs resource create sharedlv4 --group shared_vg3 ocf:heartbeat:LVM-activate lvname=shared_lv3 vgname=shared_vg3 activation_mode=shared vg_access_mode=lvmlockd
+
+pcs resource clone shared_vg3 interleave=true
+
+pcs constraint order start locking-clone then shared_vg3-clone
+
+pcs constraint colocation add shared_vg3-clone with locking-clone
+
+pcs resource create sharedfs4 --group shared_vg3 ocf:heartbeat:Filesystem device="/dev/shared_vg3/shared_lv3" directory="/gfs4" fstype="gfs2" options=noatime op monitor interval=10s on-fail=fence
+
+==== Logs =====
+
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# lvcreate --activate sy -L1G -n shared_lv3 shared_vg3
+  Logical volume "shared_lv3" created.
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# lvs
+  LV         VG         Attr       LSize Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  shared_lv1 shared_vg1 -wi-ao---- 2.00g                                                    
+  shared_lv2 shared_vg1 -wi-ao---- 2.00g                                                    
+  shared_lv1 shared_vg2 -wi-ao---- 7.00g                                                    
+  shared_lv3 shared_vg3 -wi-a----- 1.00g                                                    
+[root@rocky-node1 ~]# mkfs.gfs2 -j2 -p lock_dlm -t gfs2_cluster:gfs2-demo4 /dev/shared_vg3/shared_lv3
+/dev/shared_vg3/shared_lv3 is a symbolic link to /dev/dm-3
+This will destroy any data on /dev/dm-3
+Are you sure you want to proceed? [y/n] y
+Discarding device contents (may take a while on large devices): Done
+Adding journals: Done 
+Building resource groups: Done 
+Creating quota file: Done
+Writing superblock and syncing: Done
+Device:                    /dev/shared_vg3/shared_lv3
+Block size:                4096
+Device size:               1.00 GB (262144 blocks)
+Filesystem size:           1.00 GB (262142 blocks)
+Journals:                  2
+Journal size:              16MB
+Resource groups:           6
+Locking protocol:          "lock_dlm"
+Lock table:                "gfs2_cluster:gfs2-demo4"
+UUID:                      bbe9c721-14b6-400c-9cff-73d3f675eee6
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# df -tHP
+df: no file systems processed
+[root@rocky-node1 ~]# df -ThP
+Filesystem                        Type      Size  Used Avail Use% Mounted on
+devtmpfs                          devtmpfs  4.0M     0  4.0M   0% /dev
+tmpfs                             tmpfs     1.8G   79M  1.8G   5% /dev/shm
+tmpfs                             tmpfs     731M  8.7M  722M   2% /run
+efivarfs                          efivarfs  256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2                         xfs        20G  5.1G   15G  26% /
+/dev/sda1                         vfat      200M  7.1M  193M   4% /boot/efi
+/dev/loop0                        iso9660    15M   15M     0 100% /iso1
+/dev/loop1                        iso9660    13M   13M     0 100% /iso2
+/dev/mapper/shared_vg1-shared_lv1 gfs2      2.0G   35M  2.0G   2% /gfs1
+/dev/mapper/shared_vg1-shared_lv2 gfs2      2.0G   35M  2.0G   2% /gfs2
+tmpfs                             tmpfs     366M     0  366M   0% /run/user/1000
+/dev/mapper/shared_vg2-shared_lv1 gfs2      7.0G   35M  7.0G   1% /gfs3
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# pcs status
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 09:28:03 2026 on rocky-node1
+  * Last change:  Fri Apr 10 08:51:13 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 17 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Started: [ rocky-node1 rocky-node2 ]
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# pcs resource create sharedlv3 --group shared_vg3 ocf:heartbeat:LVM-activate lvname=shared_lv3 vgname=shared_vg3 activation_mode=shared vg_access_mode=lvmlockd
+Deprecation Warning: Using '--group' is deprecated and will be replaced with 'group' in a future release. Specify --future to switch to the future behavior.
+Error: 'sharedlv3' already exists
+[root@rocky-node1 ~]# pcs status --full
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (1) (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 09:28:50 2026 on rocky-node1
+  * Last change:  Fri Apr 10 08:51:13 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 17 resource instances configured
+
+Node List:
+  * Node rocky-node1 (1): online, feature set 3.19.6
+  * Node rocky-node2 (2): online, feature set 3.19.6
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Resource Group: locking:0:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node2
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node2
+    * Resource Group: locking:1:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node1
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node1
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Resource Group: shared_vg1:0:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node2
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg1:1:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node1
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node1
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Resource Group: shared_vg2:0:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg2:1:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node1
+
+Migration Summary:
+
+Fencing History:
+  * reboot of rocky-node2 successful: delegate=rocky-node1, client=stonith-api.126062, origin=rocky-node1, completed='2026-04-10 08:42:27.221161Z'
+  * reboot of rocky-node2 successful: delegate=rocky-node1, client=pacemaker-controld.12940, origin=rocky-node1, completed='2026-04-10 08:42:27.220161Z'
+
+Tickets:
+
+PCSD Status:
+  rocky-node1: Online
+  rocky-node2: Online
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# pcs resource create sharedlv4 --group shared_vg3 ocf:heartbeat:LVM-activate lvname=shared_lv3 vgname=shared_vg3 activation_mode=shared vg_access_mode=lvmlockd
+Deprecation Warning: Using '--group' is deprecated and will be replaced with 'group' in a future release. Specify --future to switch to the future behavior.
+[root@rocky-node1 ~]# pcs status
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 09:29:31 2026 on rocky-node1
+  * Last change:  Fri Apr 10 09:29:28 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 18 resource instances configured
+
+Node List:
+  * Online: [ rocky-node1 rocky-node2 ]
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Started: [ rocky-node1 rocky-node2 ]
+  * Resource Group: shared_vg3:
+    * sharedlv4 (ocf:heartbeat:LVM-activate):    Started rocky-node1
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# pcs status --full
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (1) (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 09:29:39 2026 on rocky-node1
+  * Last change:  Fri Apr 10 09:29:28 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 18 resource instances configured
+
+Node List:
+  * Node rocky-node1 (1): online, feature set 3.19.6
+  * Node rocky-node2 (2): online, feature set 3.19.6
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Resource Group: locking:0:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node2
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node2
+    * Resource Group: locking:1:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node1
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node1
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Resource Group: shared_vg1:0:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node2
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg1:1:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node1
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node1
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Resource Group: shared_vg2:0:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg2:1:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node1
+  * Resource Group: shared_vg3:
+    * sharedlv4 (ocf:heartbeat:LVM-activate):    Started rocky-node1
+
+Migration Summary:
+
+Fencing History:
+  * reboot of rocky-node2 successful: delegate=rocky-node1, client=stonith-api.126062, origin=rocky-node1, completed='2026-04-10 08:42:27.221161Z'
+  * reboot of rocky-node2 successful: delegate=rocky-node1, client=pacemaker-controld.12940, origin=rocky-node1, completed='2026-04-10 08:42:27.220161Z'
+
+Tickets:
+
+PCSD Status:
+  rocky-node1: Online
+  rocky-node2: Online
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# pcs resource clone shared_vg3 interleave=true
+Deprecation Warning: configuring meta attributes without specifying the 'meta' keyword is deprecated and will be removed in a future release
+[root@rocky-node1 ~]# pcs status --full
+Cluster name: gfs2_cluster
+Cluster Summary:
+  * Stack: corosync (Pacemaker is running)
+  * Current DC: rocky-node1 (1) (version 2.1.10-1.el9-5693eaeee) - partition with quorum
+  * Last updated: Fri Apr 10 09:30:02 2026 on rocky-node1
+  * Last change:  Fri Apr 10 09:29:59 2026 by root via root on rocky-node1
+  * 2 nodes configured
+  * 19 resource instances configured
+
+Node List:
+  * Node rocky-node1 (1): online, feature set 3.19.6
+  * Node rocky-node2 (2): online, feature set 3.19.6
+
+Full List of Resources:
+  * fence-gcp   (stonith:fence_gce):     Started rocky-node1
+  * Clone Set: locking-clone [locking]:
+    * Resource Group: locking:0:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node2
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node2
+    * Resource Group: locking:1:
+      * dlm     (ocf:pacemaker:controld):        Started rocky-node1
+      * lvmlockd        (ocf:heartbeat:lvmlockd):        Started rocky-node1
+  * Clone Set: shared_vg1-clone [shared_vg1]:
+    * Resource Group: shared_vg1:0:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node2
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg1:1:
+      * sharedlv1       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedlv2       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs1       (ocf:heartbeat:Filesystem):      Started rocky-node1
+      * sharedfs2       (ocf:heartbeat:Filesystem):      Started rocky-node1
+  * Clone Set: shared_vg2-clone [shared_vg2]:
+    * Resource Group: shared_vg2:0:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node2
+    * Resource Group: shared_vg2:1:
+      * sharedlv3       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+      * sharedfs3       (ocf:heartbeat:Filesystem):      Started rocky-node1
+  * Clone Set: shared_vg3-clone [shared_vg3]:
+    * Resource Group: shared_vg3:0:
+      * sharedlv4       (ocf:heartbeat:LVM-activate):    Started rocky-node2
+    * Resource Group: shared_vg3:1:
+      * sharedlv4       (ocf:heartbeat:LVM-activate):    Started rocky-node1
+
+Migration Summary:
+
+Fencing History:
+  * reboot of rocky-node2 successful: delegate=rocky-node1, client=stonith-api.126062, origin=rocky-node1, completed='2026-04-10 08:42:27.221161Z'
+  * reboot of rocky-node2 successful: delegate=rocky-node1, client=pacemaker-controld.12940, origin=rocky-node1, completed='2026-04-10 08:42:27.220161Z'
+
+Tickets:
+
+PCSD Status:
+  rocky-node1: Online
+  rocky-node2: Online
+
+Daemon Status:
+  corosync: active/enabled
+  pacemaker: active/enabled
+  pcsd: active/enabled
+[root@rocky-node1 ~]# pcs constraint
+Colocation Constraints:
+  resource 'shared_vg1-clone' with resource 'locking-clone'
+    score=INFINITY
+  resource 'shared_vg2-clone' with resource 'locking-clone'
+    score=INFINITY
+Order Constraints:
+  start resource 'locking-clone' then start resource 'shared_vg1-clone'
+  start resource 'locking-clone' then start resource 'shared_vg2-clone'
+[root@rocky-node1 ~]# pcs constraint order start locking-clone then shared_vg3-clone
+Adding locking-clone shared_vg3-clone (kind: Mandatory) (Options: first-action=start then-action=start)
+[root@rocky-node1 ~]# pcs constraint
+Colocation Constraints:
+  resource 'shared_vg1-clone' with resource 'locking-clone'
+    score=INFINITY
+  resource 'shared_vg2-clone' with resource 'locking-clone'
+    score=INFINITY
+Order Constraints:
+  start resource 'locking-clone' then start resource 'shared_vg1-clone'
+  start resource 'locking-clone' then start resource 'shared_vg2-clone'
+  start resource 'locking-clone' then start resource 'shared_vg3-clone'
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# pcs constraint colocation add shared_vg3-clone with locking-clone
+[root@rocky-node1 ~]# pcs constraint
+Colocation Constraints:
+  resource 'shared_vg1-clone' with resource 'locking-clone'
+    score=INFINITY
+  resource 'shared_vg2-clone' with resource 'locking-clone'
+    score=INFINITY
+  resource 'shared_vg3-clone' with resource 'locking-clone'
+    score=INFINITY
+Order Constraints:
+  start resource 'locking-clone' then start resource 'shared_vg1-clone'
+  start resource 'locking-clone' then start resource 'shared_vg2-clone'
+  start resource 'locking-clone' then start resource 'shared_vg3-clone'
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# pcs resource create sharedfs4 --group shared_vg3 ocf:heartbeat:Filesystem device="/dev/shared_vg3/shared_lv3" directory="/gfs4" fstype="gfs2" options=noatime op monitor interval=10s on-fail=fence
+Deprecation Warning: Using '--group' is deprecated and will be replaced with 'group' in a future release. Specify --future to switch to the future behavior.
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# df -hP
+Filesystem                         Size  Used Avail Use% Mounted on
+devtmpfs                           4.0M     0  4.0M   0% /dev
+tmpfs                              1.8G   82M  1.8G   5% /dev/shm
+tmpfs                              731M  8.7M  722M   2% /run
+efivarfs                           256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2                           20G  5.1G   15G  26% /
+/dev/sda1                          200M  7.1M  193M   4% /boot/efi
+/dev/loop0                          15M   15M     0 100% /iso1
+/dev/loop1                          13M   13M     0 100% /iso2
+/dev/mapper/shared_vg1-shared_lv1  2.0G   35M  2.0G   2% /gfs1
+/dev/mapper/shared_vg1-shared_lv2  2.0G   35M  2.0G   2% /gfs2
+tmpfs                              366M     0  366M   0% /run/user/1000
+/dev/mapper/shared_vg2-shared_lv1  7.0G   35M  7.0G   1% /gfs3
+/dev/mapper/shared_vg3-shared_lv3  1.0G   35M  990M   4% /gfs4
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# 
