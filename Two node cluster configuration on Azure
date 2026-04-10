@@ -329,3 +329,14 @@ pcs resource clear apachegroup
 👉 To clear that constraint:
 
 Best command:
+==== How to increase size of filesystem cluster===============
+1. Enable mainatence mode 
+pcs property set maintenance-mode=true
+
+2. Add disk, extendf VG,LV and resize filesystem
+
+3. Disable after work:
+
+pcs property set maintenance-mode=false
+
+3. 
