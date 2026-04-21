@@ -3,6 +3,9 @@ cd /usr/lpp/mmfs/5.2.3.7/gpfs_rpms/
 dnf install gpfs.base*.rpm gpfs.gpl*.rpm gpfs.license*.rpm gpfs.gskit*.rpm gpfs.msg*.
 dnf install kernel-devel kernel-heades gcc-c++*
 /usr/lpp/mmfs/bin/mmcrcluster -N /tmp/nodefile --ccr-enable -r /usr/bin/ssh -R /usr/bin/scp -C cluster1.spectrum
+# cat /tmp/nodefile 
+rocky-node1:quorum-manager
+rocky-node2:quorum-manager
 export PATH=/usr/lpp/mmfs/bin:$PATH
 mmchlicense server --accept -N all
 mmlslicense
@@ -133,3 +136,19 @@ File systems in cluster cluster1.spectrum:
            1  rocky-node1    1*         2          2      active        quorum node
            2  rocky-node2    1*         2          2      active        quorum node
 [root@rocky-node1 ~]# 
+------------------- Adding 3rd node in cluster------------
+1. Update /etc/hosts on all the nodes.
+2. Configure SSH key
+3. Map shared storage to the server
+4. Install GPFS & Required Kernel Softwares
+
+------- To Map ISCSI stoarge --------------
+dnf install lvm2
+dnf install -y iscsi-initiator-utils
+echo "InitiatorName=iqn.2026-04.com.testlab:client2" > /etc/iscsi/initiatorname.iscsi
+systemctl enable iscsid
+systemctl restart iscsid
+iscsiadm -m discovery -t sendtargets -p 10.128.0.
+iscsiadm -m discovery -t sendtargets -p 10.128.0.8
+iscsiadm -m node --login
+-----------------------------------------
