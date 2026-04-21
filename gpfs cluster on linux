@@ -1,0 +1,135 @@
+sh Storage_Scale_Standard-5.2.3.7-x86_64-Linux-install
+cd /usr/lpp/mmfs/5.2.3.7/gpfs_rpms/
+dnf install gpfs.base*.rpm gpfs.gpl*.rpm gpfs.license*.rpm gpfs.gskit*.rpm gpfs.msg*.
+dnf install kernel-devel kernel-heades gcc-c++*
+/usr/lpp/mmfs/bin/mmcrcluster -N /tmp/nodefile --ccr-enable -r /usr/bin/ssh -R /usr/bin/scp -C cluster1.spectrum
+export PATH=/usr/lpp/mmfs/bin:$PATH
+mmchlicense server --accept -N all
+mmlslicense
+mmlsdisk
+mmlsnsd
+mmgetstate -a
+mmstartup -a
+# cat tiebreak.lst
+%nsd:
+  device=/dev/sdb
+  nsd=quorumDisk
+  servers=rocky-node1,rocky-node2
+  usage=descOnly
+
+mmcrnsd -F tiebreak.lst
+mmchconfig tiebreakerDisks=quorumDisk
+
+# mmlsconfig
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+# cat nsd_fs1.txt
+ %nsd:
+   device=/dev/sdc
+   nsd=nsd_meta1
+   servers=rocky-node1,rocky-node2
+   usage=metadataOnly
+   failureGroup=1
+
+ %nsd:
+   device=/dev/sdd
+   nsd=nsd_meta2
+   servers=rocky-node1,rocky-node2
+   usage=metadataOnly
+   failureGroup=1
+
+ %nsd:
+   device=/dev/sdf
+   nsd=nsd_data1
+   servers=rocky-node1,rocky-node2
+   usage=dataOnly
+   failureGroup=1
+
+ %nsd:
+   device=/dev/sdg
+   nsd=nsd_data2
+   servers=rocky-node1,rocky-node2
+   usage=dataOnly
+  failureGroup=1
+
+# cat nsd_fs2.txt 
+%nsd:
+  device=/dev/sde
+  nsd=nsd_meta3
+  servers=rocky-node1,rocky-node2
+  usage=metadataOnly
+  failureGroup=1
+
+%nsd:
+  device=/dev/sdh
+  nsd=nsd_data3
+  servers=rocky-node1,rocky-node2
+  usage=dataOnly
+  failureGroup=1
+
+mmcrfs appuser -F nsd_fs1.txt -A yes -B 256K --> It create mount path /gpfs/appuser.
+
+mmchfs appuser -T /appuser --> to change the mount path. 1st need to unmount fs on all the nodes.
+mmcrfs finuser -F /tmp/nsd_fs2.txt -A yes -B 256K -T /finuser
+
+
+[root@rocky-node1 ~]# mmlscluster 
+
+GPFS cluster information
+========================
+  GPFS cluster name:         cluster1.spectrum
+  GPFS cluster id:           9928033905408085156
+  GPFS UID domain:           cluster1.spectrum
+  Remote shell command:      /usr/bin/ssh
+  Remote file copy command:  /usr/bin/scp
+  Repository type:           CCR
+
+ Node  Daemon node name  IP address  Admin node name  Designation
+------------------------------------------------------------------
+   1   rocky-node1       10.128.0.6  rocky-node1      quorum-manager
+   2   rocky-node2       10.128.0.7  rocky-node2      quorum-manager
+
+[root@rocky-node1 ~]# mmlsconfig
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
+[root@rocky-node1 ~]# 
+[root@rocky-node1 ~]# mmgetstate -L
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         2          2      active        quorum node
+[root@rocky-node1 ~]# mmgetstate -aL
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         2          2      active        quorum node
+           2  rocky-node2    1*         2          2      active        quorum node
+[root@rocky-node1 ~]# 
