@@ -257,3 +257,52 @@ efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
 tmpfs           366M     0  366M   0% /run/user/1000
 appuser          24G  129M   24G   1% /appuser
 finuser          12G  1.3G   11G  11% /finuser
+
+
+root@rocky-node1 opt]# mmchnode --quorum -N rocky-node3
+Wed Apr 22 06:36:58 AM UTC 2026: mmchnode: Processing node rocky-node3
+mmchnode: Propagating the cluster configuration data to all affected nodes.
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmlscluster 
+
+GPFS cluster information
+========================
+  GPFS cluster name:         cluster1.spectrum
+  GPFS cluster id:           9928033905408085156
+  GPFS UID domain:           cluster1.spectrum
+  Remote shell command:      /usr/bin/ssh
+  Remote file copy command:  /usr/bin/scp
+  Repository type:           CCR
+
+ Node  Daemon node name  IP address   Admin node name  Designation
+-------------------------------------------------------------------
+   1   rocky-node1       10.128.0.6   rocky-node1      quorum-manager
+   2   rocky-node2       10.128.0.7   rocky-node2      quorum-manager
+   3   rocky-node3       10.128.0.12  rocky-node3      quorum
+
+[root@rocky-node1 opt]# 
+root@rocky-node1 opt]# mmhealth node show
+
+Node name:      rocky-node1
+Node status:    TIPS
+Status Change:  4 days ago
+
+Component      Status        Status Change     Reasons & Notices
+---------------------------------------------------------------------------------------
+GPFS           TIPS          4 days ago        unexpected_operating_system
+NETWORK        HEALTHY       4 days ago        -
+FILESYSTEM     DEGRADED      4 days ago        no_disk_space_warn(finuser)
+DISK           HEALTHY       4 days ago        -
+[root@rocky-node1 opt]# df -hP
+Filesystem      Size  Used Avail Use% Mounted on
+devtmpfs        4.0M     0  4.0M   0% /dev
+tmpfs           1.8G     0  1.8G   0% /dev/shm
+tmpfs           731M   69M  663M  10% /run
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2        20G   11G  9.7G  52% /
+/dev/sda1       200M  7.1M  193M   4% /boot/efi
+appuser          24G  129M   24G   1% /appuser
+finuser          12G  1.3G   11G  11% /finuser
+tmpfs           366M     0  366M   0% /run/user/1000
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# 
