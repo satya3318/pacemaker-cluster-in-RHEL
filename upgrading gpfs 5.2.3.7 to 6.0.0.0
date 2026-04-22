@@ -1,0 +1,493 @@
+[root@rocky-node3 tmp]# df -hP
+Filesystem      Size  Used Avail Use% Mounted on
+devtmpfs        4.0M     0  4.0M   0% /dev
+tmpfs           1.8G     0  1.8G   0% /dev/shm
+tmpfs           731M   27M  704M   4% /run
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2        20G  9.6G   11G  49% /
+/dev/sda1       200M  7.1M  193M   4% /boot/efi
+tmpfs           366M     0  366M   0% /run/user/1000
+appuser          24G  129M   24G   1% /appuser
+finuser          12G  1.3G   11G  11% /finuser
+[root@rocky-node3 tmp]# mmumount appuser
+Wed Apr 22 06:48:20 AM UTC 2026: mmumount: Unmounting file systems ...
+[root@rocky-node3 tmp]# mmumount finuser
+Wed Apr 22 06:48:27 AM UTC 2026: mmumount: Unmounting file systems ...
+
+
+[root@rocky-node1 opt]# mmlsmount all 
+File system appuser is mounted on 2 nodes.
+File system finuser is mounted on 2 nodes.
+[root@rocky-node1 opt]# mmlsmount all  -L
+                                            
+File system appuser is mounted on 2 nodes:
+  10.128.0.7      rocky-node2               
+  10.128.0.6      rocky-node1               
+                                            
+File system finuser is mounted on 2 nodes:
+  10.128.0.7      rocky-node2               
+  10.128.0.6      rocky-node1               
+[root@rocky-node1 opt]# 
+
+root@rocky-node3 tmp]# mmshutdown
+Wed Apr 22 06:49:23 AM UTC 2026: mmshutdown: Starting force unmount of GPFS file systems
+
+Wed Apr 22 06:49:28 AM UTC 2026: mmshutdown: Shutting down GPFS daemons
+Wed Apr 22 06:49:35 AM UTC 2026: mmshutdown: Finished
+[root@rocky-node3 tmp]# 
+[root@rocky-node3 tmp]# 
+
+[root@rocky-node1 opt]# mmgetstate -aL
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         2          3      active        quorum node
+           2  rocky-node2    1*         2          3      active        quorum node
+           3  rocky-node3     0         0          3      down          quorum node
+		   
+		   root@rocky-node1 opt]# mmlscluster 
+
+GPFS cluster information
+========================
+  GPFS cluster name:         cluster1.spectrum
+  GPFS cluster id:           9928033905408085156
+  GPFS UID domain:           cluster1.spectrum
+  Remote shell command:      /usr/bin/ssh
+  Remote file copy command:  /usr/bin/scp
+  Repository type:           CCR
+
+ Node  Daemon node name  IP address   Admin node name  Designation
+-------------------------------------------------------------------
+   1   rocky-node1       10.128.0.6   rocky-node1      quorum-manager
+   2   rocky-node2       10.128.0.7   rocky-node2      quorum-manager
+   3   rocky-node3       10.128.0.12  rocky-node3      quorum
+
+[root@rocky-node1 opt]# mmlsconfig 
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
+[root@rocky-node1 opt]# 
+
+[root@rocky-node3 6.0.0.1]# dnf install python3.12.x86_64
+Last metadata expiration check: 3:30:33 ago on Wed 22 Apr 2026 03:24:25 AM UTC.
+Dependencies resolved.
+===========================================================================================================================================================================
+ Package                                         Architecture                      Version                                      Repository                            Size
+===========================================================================================================================================================================
+Installing:
+ python3.12                                      x86_64                            3.12.12-4.el9_7.2                            appstream                             26 k
+Installing dependencies:
+ libnsl2                                         x86_64                            2.0.0-1.el9.0.1                              appstream                             30 k
+ libtirpc                                        x86_64                            1.3.3-9.el9                                  baseos                                93 k
+ mpdecimal                                       x86_64                            2.5.1-3.el9                                  appstream                             85 k
+ python3.12-libs                                 x86_64                            3.12.12-4.el9_7.2                            appstream                            9.2 M
+ python3.12-pip-wheel                            noarch                            23.2.1-5.el9                                 appstream                            1.5 M
+
+Transaction Summary
+===========================================================================================================================================================================
+Install  6 Packages
+
+Total download size: 11 M
+Installed size: 44 M
+Is this ok [y/N]: y
+Downloading Packages:
+(1/6): libnsl2-2.0.0-1.el9.0.1.x86_64.rpm                                                                                                  555 kB/s |  30 kB     00:00    
+(2/6): libtirpc-1.3.3-9.el9.x86_64.rpm                                                                                                     1.5 MB/s |  93 kB     00:00    
+(3/6): mpdecimal-2.5.1-3.el9.x86_64.rpm                                                                                                    1.3 MB/s |  85 kB     00:00    
+(4/6): python3.12-3.12.12-4.el9_7.2.x86_64.rpm                                                                                             1.8 MB/s |  26 kB     00:00    
+(5/6): python3.12-pip-wheel-23.2.1-5.el9.noarch.rpm                                                                                        7.7 MB/s | 1.5 MB     00:00    
+(6/6): python3.12-libs-3.12.12-4.el9_7.2.x86_64.rpm                                                                                        9.2 MB/s | 9.2 MB     00:01    
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Total                                                                                                                                      8.5 MB/s |  11 MB     00:01     
+Running transaction check
+Transaction check succeeded.
+Running transaction test
+Transaction test succeeded.
+Running transaction
+  Preparing        :                                                                                                                                                   1/1 
+  Installing       : libtirpc-1.3.3-9.el9.x86_64                                                                                                                       1/6 
+  Installing       : libnsl2-2.0.0-1.el9.0.1.x86_64                                                                                                                    2/6 
+  Installing       : python3.12-pip-wheel-23.2.1-5.el9.noarch                                                                                                          3/6 
+  Installing       : mpdecimal-2.5.1-3.el9.x86_64                                                                                                                      4/6 
+  Installing       : python3.12-3.12.12-4.el9_7.2.x86_64                                                                                                               5/6 
+  Installing       : python3.12-libs-3.12.12-4.el9_7.2.x86_64                                                                                                          6/6 
+  Running scriptlet: python3.12-libs-3.12.12-4.el9_7.2.x86_64                                                                                                          6/6 
+  Verifying        : libtirpc-1.3.3-9.el9.x86_64                                                                                                                       1/6 
+  Verifying        : libnsl2-2.0.0-1.el9.0.1.x86_64                                                                                                                    2/6 
+  Verifying        : mpdecimal-2.5.1-3.el9.x86_64                                                                                                                      3/6 
+  Verifying        : python3.12-3.12.12-4.el9_7.2.x86_64                                                                                                               4/6 
+  Verifying        : python3.12-libs-3.12.12-4.el9_7.2.x86_64                                                                                                          5/6 
+  Verifying        : python3.12-pip-wheel-23.2.1-5.el9.noarch                                                                                                          6/6 
+
+Installed:
+  libnsl2-2.0.0-1.el9.0.1.x86_64                libtirpc-1.3.3-9.el9.x86_64                   mpdecimal-2.5.1-3.el9.x86_64      python3.12-3.12.12-4.el9_7.2.x86_64     
+  python3.12-libs-3.12.12-4.el9_7.2.x86_64      python3.12-pip-wheel-23.2.1-5.el9.noarch     
+
+Complete!
+[root@rocky-node3 6.0.0.1]# 
+[root@rocky-node3 6.0.0.1]# dnf install python^C
+[root@rocky-node3 6.0.0.1]# cd gpfs_rpms/
+[root@rocky-node3 gpfs_rpms]# rpm -Uvh gpfs.base*.rpm gpfs.gpl*.rpm gpfs.docs*.rpm gpfs.msg*.rpm
+warning: gpfs.base-6.0.0-1.x86_64.rpm: Header V4 RSA/SHA256 Signature, key ID c4c9e95d: NOKEY
+Verifying...                          ################################# [100%]
+Preparing...                          ################################# [100%]
+Updating / installing...
+   1:gpfs.base-6.0.0-1                ################################# [ 14%]
+Created symlink /etc/systemd/system/multi-user.target.wants/mmautoload.service → /usr/lib/systemd/system/mmautoload.service.
+Created symlink /etc/systemd/system/multi-user.target.wants/mmccrmonitor.service → /usr/lib/systemd/system/mmccrmonitor.service.
+   2:gpfs.gpl-6.0.0-1                 ################################# [ 29%]
+   3:gpfs.msg.en_US-6.0.0-1           ################################# [ 43%]
+   4:gpfs.docs-6.0.0-1                ################################# [ 57%]
+make[1]: Entering directory '/usr/lpp/mmfs/src'
+rm -rf /usr/lpp/mmfs/src/include /usr/lpp/mmfs/src/bin /usr/lpp/mmfs/src/lib
+mkdir /usr/lpp/mmfs/src/include /usr/lpp/mmfs/src/bin /usr/lpp/mmfs/src/lib
+rm -f //usr/lpp/mmfs/src/gpl-linux/gpl_kernel.tmp.ver
+cleaning (/usr/lpp/mmfs/src/ibm-kxi)
+make[2]: Entering directory '/usr/lpp/mmfs/src/ibm-kxi'
+rm -f  install.he; \
+ for i in cxiTypes.h cxiSystem.h cxi2gpfs.h cxiVFSStats.h cxiCred.h cxiIOBuffer.h cxiSharedSeg.h cxiMode.h Trace.h cxiMmap.h cxiAtomic.h cxiTSFattr.h cxiAclUser.h cxiLinkList.h cxiDmapi.h LockNames.h lxtrace.h cxiGcryptoDefs.h cxiSynchNames.h cxiMiscNames.h cxiPMem.h DirIds.h; do \
+    (set -x; rm -f -r /usr/lpp/mmfs/src/include/cxi/$i) done
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiTypes.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiSystem.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxi2gpfs.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiVFSStats.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiCred.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiIOBuffer.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiSharedSeg.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiMode.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/Trace.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiMmap.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiAtomic.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiTSFattr.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiAclUser.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiLinkList.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiDmapi.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/LockNames.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/lxtrace.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiGcryptoDefs.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiSynchNames.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiMiscNames.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/cxiPMem.h
++ rm -f -r /usr/lpp/mmfs/src/include/cxi/DirIds.h
+make[2]: Leaving directory '/usr/lpp/mmfs/src/ibm-kxi'
+cleaning (/usr/lpp/mmfs/src/ibm-linux)
+make[2]: Entering directory '/usr/lpp/mmfs/src/ibm-linux'
+rm -f install.he; \
+ for i in cxiTypes-plat.h cxiSystem-plat.h cxiIOBuffer-plat.h cxiSharedSeg-plat.h cxiMode-plat.h Trace-plat.h cxiAtomic-plat.h cxiMmap-plat.h cxiVFSStats-plat.h cxiCred-plat.h cxiDmapi-plat.h; do \
+                (set -x; rm -rf /usr/lpp/mmfs/src/include/cxi/$i) done
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiTypes-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiSystem-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiIOBuffer-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiSharedSeg-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiMode-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/Trace-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiAtomic-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiMmap-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiVFSStats-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiCred-plat.h
++ rm -rf /usr/lpp/mmfs/src/include/cxi/cxiDmapi-plat.h
+make[2]: Leaving directory '/usr/lpp/mmfs/src/ibm-linux'
+cleaning (/usr/lpp/mmfs/src/gpl-linux)
+make[2]: Entering directory '/usr/lpp/mmfs/src/gpl-linux'
+Pre-kbuild step 1...
+/usr/bin/make -C /usr/src/kernels/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64 M=/usr/lpp/mmfs/src/gpl-linux clean
+make[3]: Entering directory '/usr/src/kernels/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64'
+  CLEAN   /usr/lpp/mmfs/src/gpl-linux
+  CLEAN   /usr/lpp/mmfs/src/gpl-linux/Module.symvers
+make[3]: Leaving directory '/usr/src/kernels/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64'
+rm -f -f /lib/modules/`cat //usr/lpp/mmfs/src/gpl-linux/gpl_kernel.tmp.ver`/extra/tracedev.ko
+rm -f -f /lib/modules/`cat //usr/lpp/mmfs/src/gpl-linux/gpl_kernel.tmp.ver`/extra/mmfslinux.ko
+rm -f -f /lib/modules/`cat //usr/lpp/mmfs/src/gpl-linux/gpl_kernel.tmp.ver`/extra/mmfs26.ko
+rm -f -f /usr/lpp/mmfs/src/../bin/lxtrace-`cat //usr/lpp/mmfs/src/gpl-linux/gpl_kernel.tmp.ver`
+rm -f -f *.o .depends .*.cmd *.ko *.a *.mod.c core *_shipped *map *mod.c.saved *.symvers *.ko.ver ./*.ver install.he
+rm -f -rf usr
+make[2]: Leaving directory '/usr/lpp/mmfs/src/gpl-linux'
+make[1]: Leaving directory '/usr/lpp/mmfs/src'
+Cleaning up / removing...
+   5:gpfs.gpl-5.2.3-7                 ################################# [ 71%]
+   6:gpfs.base-5.2.3-7                ################################# [ 86%]
+   7:gpfs.msg.en_US-5.2.3-7           ################################# [100%]
+[root@rocky-node3 gpfs_rpms]# 
+[root@rocky-node3 gpfs_rpms]# rpm -qa | grep -i gpfs
+gpfs.gskit-8.0.55-19.1.x86_64
+gpfs.license.std-5.2.3-7.x86_64
+gpfs.base-6.0.0-1.x86_64
+gpfs.gpl-6.0.0-1.noarch
+gpfs.msg.en_US-6.0.0-1.noarch
+gpfs.docs-6.0.0-1.noarch
+[root@rocky-node3 gpfs_rpms]# 
+
+[root@rocky-node3 gpfs_rpms]# mmstartup 
+Wed Apr 22 06:56:40 AM UTC 2026: mmstartup: Starting GPFS ...
+mmremote: startSubsys: The /lib/modules/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/extra/mmfslinux.ko kernel extension does not exist.  Use mmbuildgpl command to create the needed kernel extension for your kernel or copy the binaries from another node with the identical environment.
+mmremote: startSubsys: Unable to verify kernel/module configuration.
+mmstartup: Command failed. Examine previous error messages to determine cause.
+[root@rocky-node3 gpfs_rpms]# mmbuildgpl
+--------------------------------------------------------
+mmbuildgpl: Building GPL (6.0.0.1) module begins at Wed Apr 22 06:56:50 AM UTC 2026.
+--------------------------------------------------------
+Verifying gpfs.base and gpfs.gnr version match...
+Verifying Kernel Header...
+  kernel version = 51400611 (514000611047000, 5.14.0-611.47.1+2.1.el9_7_ciq.x86_64, 5.14.0-611.47) 
+  module include dir = /lib/modules/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/build/include 
+  module build dir   = /lib/modules/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/build 
+  kernel source dir  = /usr/src/linux-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/include 
+  Found valid kernel header file under /usr/src/kernels/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/include
+Getting Kernel Cipher mode...
+   Will use skcipher routines
+Verifying Compiler...
+  make is present at /bin/make
+  cpp is present at /bin/cpp
+  gcc is present at /bin/gcc
+  g++ is present at /bin/g++
+  ld is present at /bin/ld
+Verifying Additional System Headers...
+  Verifying kernel-headers is installed ...
+    Command: /bin/rpm -q kernel-headers  
+    The required package kernel-headers is installed
+make World ...
+make InstallImages ...
+--------------------------------------------------------
+mmbuildgpl: Building GPL module completed successfully at Wed Apr 22 06:57:27 AM UTC 2026.
+--------------------------------------------------------
+[root@rocky-node3 gpfs_rpms]# 
+[root@rocky-node3 gpfs_rpms]# 
+[root@rocky-node3 gpfs_rpms]# 
+[root@rocky-node3 gpfs_rpms]# mmstartup 
+Wed Apr 22 06:57:54 AM UTC 2026: mmstartup: Starting GPFS ...
+[root@rocky-node3 gpfs_rpms]# 
+
+[root@rocky-node1 opt]# mmgetstate -aL
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         3          3      active        quorum node
+           2  rocky-node2    1*         3          3      active        quorum node
+           3  rocky-node3    1*         3          3      active        quorum node
+[root@rocky-node1 opt]# mmgetstate -aL
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         3          3      active        quorum node
+           2  rocky-node2    1*         3          3      active        quorum node
+           3  rocky-node3    1*         3          3      active        quorum node
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmlsconfig 
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
+[root@rocky-node1 opt]# 
+
+
+
+[root@rocky-node1 opt]# mmlsconfig
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
+[root@rocky-node1 opt]# mmchconfig release=7.0.0.1
+mmchconfig: Incorrect option: release=7.0.0.1
+mmchconfig: Command failed. Examine previous error messages to determine cause.
+[root@rocky-node1 opt]# mmchconfig release=6.0.0.2
+mmchconfig: Incorrect option: release=6.0.0.2
+mmchconfig: Command failed. Examine previous error messages to determine cause.
+
+[root@rocky-node1 opt]# rpm -qa | grep -i gpfs
+gpfs.gskit-8.0.55-19.1.x86_64
+gpfs.license.std-5.2.3-7.x86_64
+gpfs.base-6.0.0-1.x86_64
+gpfs.gpl-6.0.0-1.noarch
+gpfs.msg.en_US-6.0.0-1.noarch
+gpfs.docs-6.0.0-1.noarch
+[root@rocky-node1 opt]# mmdsh -N NodeList rpm -Fvh /usr/lpp/mmfs/6.0.0.1/
+ansible-toolkit/ ganesha_rpms/    gpfs_rpms/       license/         Public_Keys/     scaleapi_debs/   smb_debs/        zimon_debs/      
+ganesha_debs/    gpfs_debs/       hdfs_rpms/       manifest         s3_rpms/         scaleapi_rpms/   smb_rpms/        zimon_rpms/      
+[root@rocky-node1 opt]# mmdsh -N NodeList rpm -Fvh /usr/lpp/mmfs/6.0.0.1/gpfs_
+gpfs_debs/ gpfs_rpms/ 
+[root@rocky-node1 opt]# mmdsh -N NodeList rpm -Fvh /usr/lpp/mmfs/6.0.0.1/gpfs_
+gpfs_debs/ gpfs_rpms/ 
+[root@rocky-node1 opt]# mmdsh -N NodeList rpm -Fvh /usr/lpp/mmfs/6.0.0.1/gpfs_rpms/
+gpfs.afm.cos-6.0.0-1.x86_64.rpm      gpfs.gpl-6.0.0-1.noarch.rpm          gpfs.license.std-6.0.0-1.x86_64.rpm  rhel8/
+gpfs.base-6.0.0-1.x86_64.rpm         gpfs.gskit-8.0.55-19.1.x86_64.rpm    gpfs.msg.en_US-6.0.0-1.noarch.rpm    rhel9/
+gpfs.compression-6.0.0-1.x86_64.rpm  gpfs.gui-6.0.0-1.noarch.rpm          repodata/                            sles15/
+gpfs.docs-6.0.0-1.noarch.rpm         gpfs.java-6.0.0-1.x86_64.rpm         rhel10/                              
+[root@rocky-node1 opt]# mmdsh -N NodeList rpm -Fvh /usr/lpp/mmfs/6.0.0.1/gpfs_rpms/
+gpfs.afm.cos-6.0.0-1.x86_64.rpm      gpfs.gpl-6.0.0-1.noarch.rpm          gpfs.license.std-6.0.0-1.x86_64.rpm  rhel8/
+gpfs.base-6.0.0-1.x86_64.rpm         gpfs.gskit-8.0.55-19.1.x86_64.rpm    gpfs.msg.en_US-6.0.0-1.noarch.rpm    rhel9/
+gpfs.compression-6.0.0-1.x86_64.rpm  gpfs.gui-6.0.0-1.noarch.rpm          repodata/                            sles15/
+gpfs.docs-6.0.0-1.noarch.rpm         gpfs.java-6.0.0-1.x86_64.rpm         rhel10/                              
+[root@rocky-node1 opt]# mmdsh -N all rpm -Fvh /usr/lpp/mmfs/6.0.0.1/gpfs_rpms/gpfs.license.std-6.0.0-1.x86_64.rpm 
+rocky-node3:  warning: /usr/lpp/mmfs/6.0.0.1/gpfs_rpms/gpfs.license.std-6.0.0-1.x86_64.rpm: Header V4 RSA/SHA256 Signature, key ID c4c9e95d: NOKEY
+rocky-node2:  Verifying...                          ########################################
+rocky-node2:  Preparing...                          ########################################
+rocky-node1:  warning: /usr/lpp/mmfs/6.0.0.1/gpfs_rpms/gpfs.license.std-6.0.0-1.x86_64.rpm: Header V4 RSA/SHA256 Signature, key ID c4c9e95d: NOKEY
+rocky-node3:  Verifying...                          ########################################
+rocky-node3:  Preparing...                          ########################################
+rocky-node1:  Verifying...                          ########################################
+rocky-node1:  Preparing...                          ########################################
+rocky-node3:  Updating / installing...
+rocky-node3:  gpfs.license.std-6.0.0-1              ########################################
+rocky-node2:  Updating / installing...
+rocky-node2:  gpfs.license.std-6.0.0-1              ########################################
+rocky-node3:  Cleaning up / removing...
+rocky-node3:  gpfs.license.std-5.2.3-7              ########################################
+rocky-node2:  Cleaning up / removing...
+rocky-node2:  gpfs.license.std-5.2.3-7              ########################################
+rocky-node1:  Updating / installing...
+rocky-node1:  gpfs.license.std-6.0.0-1              ########################################
+rocky-node1:  Cleaning up / removing...
+rocky-node1:  gpfs.license.std-5.2.3-7              ########################################
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmlscluster 
+
+GPFS cluster information
+========================
+  GPFS cluster name:         cluster1.spectrum
+  GPFS cluster id:           9928033905408085156
+  GPFS UID domain:           cluster1.spectrum
+  Remote shell command:      /usr/bin/ssh
+  Remote file copy command:  /usr/bin/scp
+  Repository type:           CCR
+
+ Node  Daemon node name  IP address   Admin node name  Designation
+-------------------------------------------------------------------
+   1   rocky-node1       10.128.0.6   rocky-node1      quorum-manager
+   2   rocky-node2       10.128.0.7   rocky-node2      quorum-manager
+   3   rocky-node3       10.128.0.12  rocky-node3      quorum
+
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmlsconfig
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
+[root@rocky-node1 opt]# df -hP
+Filesystem      Size  Used Avail Use% Mounted on
+devtmpfs        4.0M     0  4.0M   0% /dev
+tmpfs           1.8G     0  1.8G   0% /dev/shm
+tmpfs           731M   68M  663M  10% /run
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2        20G   12G  8.1G  60% /
+/dev/sda1       200M  7.1M  193M   4% /boot/efi
+tmpfs           366M     0  366M   0% /run/user/1000
+appuser          24G  129M   24G   1% /appuser
+finuser          12G  957M   12G   8% /finuser
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmchconfig release=6.0.0.2
+mmchconfig: Incorrect option: release=6.0.0.2
+mmchconfig: Command failed. Examine previous error messages to determine cause.
+[root@rocky-node1 opt]# mmchconfig release=6.0.0.1
+mmchconfig: Incorrect option: release=6.0.0.1
+mmchconfig: Command failed. Examine previous error messages to determine cause.
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmchconfig release=6.0.0.1
+mmchconfig: Incorrect option: release=6.0.0.1
+mmchconfig: Command failed. Examine previous error messages to determine cause.
+[root@rocky-node1 opt]# man mmchconfig
+[root@rocky-node1 opt]# mmlsconfig
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+minReleaseLevel 5.2.3.7
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
+
+
+
+[root@rocky-node1 opt]# mmchconfig release=LATEST
+
+Verifying that all nodes in the cluster are up-to-date ...
+mmchconfig: Command successfully completed
+mmchconfig: Propagating the cluster configuration data to all
+  affected nodes.  This is an asynchronous process.
+[root@rocky-node1 opt]# mmlsconfig 
+Configuration data for cluster cluster1.spectrum:
+-------------------------------------------------
+clusterName cluster1.spectrum
+clusterId 9928033905408085156
+autoload no
+dmapiFileHandleSize 32
+tscCmdAllowRemoteConnections no
+ccrEnabled yes
+cipherList AUTHONLY
+sdrNotifyAuthEnabled yes
+tiebreakerDisks quorumDisk
+prefetchLargeBlockThreshold 32M
+minReleaseLevel 6.0.0.0
+adminMode central
+
+File systems in cluster cluster1.spectrum:
+------------------------------------------
+/dev/appuser
+/dev/finuser
