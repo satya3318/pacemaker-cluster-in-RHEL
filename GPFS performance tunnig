@@ -1,0 +1,314 @@
+mmchconfig pagepool=16G
+mmchconfig worker1Threads=128
+mmchconfig prefetchThreads=64
+mmchconfig maxBufferDescs=200000
+mmchconfig nsdThreadsPerDisk=4
+mmchconfig maxReceiverThreads=64
+mmchconfig maxSenderThreads=64
+
+EXTRA - GPFS, SPECTRUM SCALE
+
+
+GPFS - Spectrum Scale
+
+
+GPFS is available on AIX since 1998 (on Linux since 2001, on Windows since 2008). It provides concurrent high-speed file access on multiple nodes of cluster. In 2015 IBM rebranded GPFS as IBM Spectrum Scale.
+
+Spectrum Scale provides high performance by allowing data to be accessed by multiple servers at once. It provides higher input/output performance by "striping" blocks of data from individual files over multiple disks, and reading and writing these blocks in parallel. Spectrum Scale commands can be executed from any node in the cluster. If tasks must be performed on another node in the cluster, the command automatically redirects the request to the appropriate node for execution. (ssh-key is needed)
+
+
+These ports are needed on firewall:
+GPFS - 1191 TCP
+SSH  - 22 TCP
+
+
+----------------------------------------------
+
+Spectrum Scale components:
+
+
+Cluster:
+A Spectrum Scale cluster is formed by a collection of nodes that share access to the file systems defined in the cluster.
+
+
+Node:
+A node is any server that has the Spectrum Scale product installed on a physical machine, or on a virtual machine.
+
+
+Quorum nodes:
+During cluster creation some nodes can be designated as quorum nodes. Maintaining quorum in a GPFS cluster means that a majority of the nodes designated as quorum nodes are able to successfully communicate. In a three quorum node configuration two nodes have to be communicating for cluster operations to continue. When one node is isolated by a network failure, it stops all file system operations until communications are restored, so no data is corrupted by a lack of coordination. (The exact calculation of quorum is, one plus half of the defined quorum nodes.) (show quorum nodes: mmgetstate)
+
+
+Cluster manager:
+The cluster manager node monitors disk lease expiration, state of the quorum, detects failures and starts recovery. In overall it has the responsibility for correct operation of the nodes and the cluster. It is chosen through an election held among the quorum nodes. (Starting in GPFS 3.5 it is possible to define by command as well.) (show cluster manager: mmlsmgr)
+
+File System  manager:
+Each file system has a file system manager, which handles all of the nodes using that file system. It has the tasks: repairing/configuring the filesystem, managing disk space allocation, giving access to files to read/write... The file system manager is selected by the cluster manager. (check file system manager: mmlsmgr)
+
+
+Network shared disk (NSD)
+The disks configured in the cluster are called NSD. Each physical disk available on AIX, which will be part of the cluter, needs to be defined first as an NSD (with the command mmcrnsd). The names created by mmcrnsd are necessary since disks connected to multiple nodes may have different disk names on each node. The NSD names uniquely identify each disk. mmcrnsd must be run as a first step for all disks that are to be used in GPFS file systems. (check NSD: mmlsnsd)
+
+
+Storage pool
+It ss a collection of NSDs and with this featue some disks can be grouped together (for example based on type of storage, or vendor...) (check storage pool: mmlspool)
+
+
+Failure group
+In GPFS you can replicate (mirror) any files or the entire file system. A replication factor of two in GPFS means that each block of a replicated file is in at least two failure groups. A failure group is defined by the administrator and contains one or more NSDs. Each file system can contain one or more failure groups which are defined by the administrator and can be changed at any time. So when a file system is fully replicated any single failure group can fail and the data remains online.
+(check failure groups: mmlsdisk)
+
+
+----------------------------------------------
+
+Deadlock
+
+
+Spectrum Scale has to guarantee parallelism and concurrent access,  and the overall complexity of a clustered environment can lead to a deadlock condition. This is related to the locking mechanism of files in the cluster. A deadlock situation can occur when a node is waiting for some information and this information is not available. For example, a file access is owned by a node, but that node fails to respond.  (It is caused mostly due to a network or disk failure.)
+
+Deadlocks can lead to a cluster failure. When a deadlock is encountered on a production system, it can take a long time to debug. The typical approach to recovering from a deadlock involves rebooting all of the nodes in the cluster. Thus, deadlocks can lead to prolonged and complete outages of clusters.
+
+Some symptoms of a deadlock condition:
+- Application processes hung and usually cannot be killed (even with kill -9).
+- The ls -l or df hangs and cannot be killed.
+- Unresponsive nodes (console sessions hung, remote commands cannot be executed).
+- the response times start to increase, even though some progress is being made, the system looks effectively deadlocked to users.
+
+
+----------------------------------------------
+
+
+Node failure - Disk lease - failureDetectionTime
+
+
+GPFS is designed to tolerate node failures. It uses metadata logging (journaling) and the log file is called the recovery log. In the event of a node failure, GPFS performs recovery by replaying the recovery log for the failed node, thus restoring the file system to a consistent state and allowing other nodes to continue working.
+
+If the failed node has access to disks of a GPFS file system (for example server is up just unable to communicate with the rest of the cluster), it is necessary to ensure that no additional IOs are submitted after recovery log replay has started. To accomplish this, GPFS uses the disk lease mechanism. The disk leasing mechanism (sort  of a heartbeat) guarantees that a node does not submit any more I/O requests once its disk lease has expired, and the surviving nodes use disk lease time out as a guideline for starting recovery.
+
+If a GPFS node fails, detection of the failure by the other node can take up to the configured failureDetectionTime setting. First the cluster manager sees that the disk lease is overdue, and starts to send ping packets (ICMP ECHO), to see whether the node has any signs of life.  If the node responds to pings, the code waits longer before kicking the node out of the cluster, and if the node doesn't respond, it's expelled sooner.  The failureDetectionTime tunable can be used to control the amount of time it takes to declare a node dead in this scenario.
+
+
+----------------------------------------------
+
+
+leaseRecoveryWait
+
+
+After node failure detection, the leaseRecoveryWait setting will be waited by the remaining FS manager to let in-flight IO to complete before replaying the recovery log. The leaseRecoveryWait parameter defines how long the FS manager of a filesystem will wait after the last known lease expiration of any failed nodes before running recovery. A failed node cannot reconnect to the cluster before recovery is finished. The leaseRecoveryWait parameter value is in seconds and the default is 35.
+
+After a node failure has been detected by the Cluster Manager, the FS manager for each filesystem waits for any in-flight IO from the dying node to complete before it can replay the log.  This time starts when the dying node's lease has expired. The LRW time is also used to test (ping) that the node if it is dead. If it was just a transient network problem that resolves before LRW runs out, then the node is not dropped from the cluster
+
+
+----------------------------------------------
+
+
+Hung IO - Deadman Switch timer (DMS timer)
+
+
+GPFS does not time-out IOs to disk. GPFS just waits until the IO request either completes successfully, fails, or hangs. It is up to the operating system drivers to do retries or do time-out on the hanging IO. In case of a node failure, GPFS needs to calculate with the possibility of 'hung I/O'. If an I/O request is submitted prior to the disk lease expiration, but for some reason (for example, device driver malfunction) the I/O takes a long time to complete, it is possible that it may complete during or after the recovery. This situation would lead to file system corruption, so to avoid it the Deadman Switch timer has been implemented.
+
+When I/O requests are being issued directly to the underlying disk device, and the disk lease expired, GPFS initiates a kernel timer, referred to as dead man switch (DMS timer). The dead man switch checks whether there is any outstanding I/O requests, and if there is any I/O pending, a kernel panic (server reboot) is initiated to prevent possible file system corruption.
+
+leaseDMSTimeout (by default 2/3 of leaseRecoveryWait):
+This GPFS parameter specifies how long the deadman switch (DMS) will allow for pending I/Os to complete after a node's lease has expired. The purpose of the DMS is to ensure I/Os started just before a node lost its lease will complete within the time allowed by LeaseRecoveryWait.  If there are still I/Os pending after the specified time the DMS will kill the node to prevent the device driver or host adapter from re-submitting I/Os that have not yet completed.  (To be effective, LeaseDMSTimeout must be less than LeaseRecoveryWait.)
+
+
+
+
+
+----------------------------------------------
+
+
+Node expel
+
+
+There are two types of node expels:
+
+Disk Lease Expiration:
+GPFS uses a mechanism referred to as a disk lease to prevent file system data corruption by a failing node. A disk lease grants a node the right to submit IO to a file system. File system disk leases are managed by the Cluster Manager. A node must periodically renew it's disk lease with the Cluster Manager to maintain it's right to submit IO to the file system. When a node fails to renew a disk lease with the Cluster Manager, the Cluster Manager marks the node as failed, revokes the node's right to submit IO to the file system, expels the node from the cluster, and initiates recovery processing for the failed node.
+
+Node Expel Request:
+GPFS uses a mechanism referred to as a node expel request to prevent file system resource deadlocks. Nodes in the cluster require reliable communication amongst themselves to coordinate sharing of file system resources. If a node fails while owning a file system resource, a deadlock may ensue. If a node in the cluster detects that another node owing a shared file system resource may have failed, the node will send a message to the file system Cluster Manger requesting the failed node to be expelled from the cluster to prevent a shared file system resource deadlock. When the Cluster Manager receives a node expel request, it determines which of the two nodes should be expelled from the cluster and takes similar action as described for the Disk Lease expiration.
+Both types of node expels, Disk Lease Expiration and Node Expel Request, will result in a node unmounting the GPFS file system and possible job failure. Both type of expels are often a result of some type of network issue.
+
+
+----------------------------------------------
+
+
+File locations:
+
+/usr/lpp/mmfs/bin                             all Spectrum Scale commands are there (good to ad this location to PATH variable)
+/var/adm/ras                                  main log file is there, looks like: mmfs.log
+
+
+
+Cluster/Node commands:
+
+mmcrcluster                                   creates a GPFS cluster
+mmstartup -a                                  starts GPFS on all nodes in a cluster
+mmshutdown -a                                 umounts GPFS filesystems and stops GPFS on all nodes
+
+mmgetstate -L -a -s                           GPFS status, and info about the nodes (-s: summary, -L: node info, -a: all node)
+mmlscluster / mmchcluster                     displays/changes main cluster info (cluster name, node list..)
+mmlsconfig / mmchconfig                       displays/changes config. parameters of the cluster (block size, number of files to cache...)
+
+mmlsmgr                                       displays the cluster manage and file system managers
+mmaddnode / mmdelnode                         adds / removes nodes from the cluster (mmlsnode also exist)
+
+
+
+Storage/disk commands:
+
+mmlspool <fs>                                 displays storage pools configured for given fs
+
+mmlsnsd / mmcrnsd / mmchnsd/ mmdelnsd         displays / changes NSD information (mmlsnsd -M : gives detailed info)
+mmlsdisk / mmadddisk / mmchdisk/ mmdeldisk    displays / changes current configuration of disks in a filesystem
+mmlsdisk <fs> -L                              shows many info about the disk: failure group name, state is up or down...
+
+mmchdisk <fs> stop -d <diskname>              stop a disk (no io will be going there, stop is needed before disk maintenance)
+mmchdisk <fs> start -a                        scans through all disk and changes states to up if possible
+
+
+
+File System commands:
+
+mmlsfs / mmcrfs / mmchfs / mmdelfs            displays / modifies a GPFS filesystem
+mmlsfs all -a                                 lists every attribute of all GPFS filesystems (block size, inode size,auto mount...)
+
+mmlsmount / mmmount / mmumount                displays / modifies GPFS mounts
+mmlsmount all -L                              lists all nodes of each mounted filesystem
+mmmount <fs> -a                               mounts given fs on all nodes
+mmumount <fs> -a                              umounts given fs on all nodes
+
+
+mmdf <fs>                                     displays available file space of given fs
+mmfsck <fs> -o                                online fsck on a moubted filesystem (without -o, offline mode. All disk must be in up state)
+
+
+----------------------------------------------
+
+
+Check GPFS filesystems in /etc/filesystems:
+
+/tsm/db:
+        dev             = /dev/tsmdb
+        vfs             = mmfs
+        nodename        = -
+        mount           = mmfs
+        type            = mmfs
+        account         = false
+        options         = rw,mtime,atime,dev=tsmdb
+
+
+----------------------------------------------
+
+
+Changing a GPFS parameter:
+
+Here autoload will be change to yes:
+
+1. # mmlsconfig                                             <--check parameter (it shows: autoload no)
+
+2. # mmchconfig autoload=yes                                <--change parameter
+mmchconfig: Command successfully completed
+
+3. check again with mmlsconfig
+
+
+----------------------------------------------
+
+
+Stop and start a disk in a filesystem
+
+For disk maintenance (error) this steps may needed:
+
+1. mmlsconfig, mmlsdisk <fs> -L                              <--check which filesystem, and after which disk belongs to that filesystem
+
+mmlsdisk tsmstest -L
+disk         driver   sector     failure holds    holds                          
+name         type       size       group metadata data  status        availability
+------------ -------- ------ ----------- -------- ----- ------------- ------------
+test_00      nsd         512         101 yes      no    ready         up      
+test_01      nsd         512         101 no       yes   ready         up    
+test_02      nsd         512         101 no       yes   ready         up      
+
+
+2. mmchdisk tsmtest stop -d test_01                          <-- stop specified disk
+
+3. mmlsdisk tsmstest -L                                      <--check again disk status
+disk         driver   sector     failure holds    holds                          
+name         type       size       group metadata data  status        availability
+------------ -------- ------ ----------- -------- ----- ------------- ------------
+test_00      nsd         512         101 yes      no    ready         up      
+test_01      nsd         512         101 no       yes   ready         down    
+test_02      nsd         512         101 no       yes   ready         up      
+
+4. mmchdisk tsmtest start -a                                 <--scans all disks in given fs, and starts disks which are down (if possible)
+mmnsddiscover:  Attempting to rediscover the disks.  This may take a while ...
+mmnsddiscover:  Finished.
+GPFS: 6027-589 Scanning file system metadata, phase 1 ...
+GPFS: 6027-552 Scan completed successfully.
+GPFS: 6027-589 Scanning file system metadata, phase 2 ...
+Scanning file system metadata for data storage pool
+....
+
+
+----------------------------------------------
+
+
+Stop and start GPFS
+
+
+root@gpfs1:/> mmshutdown
+Tue Aug 11 13:59:16 EDT 2015: mmshutdown: Starting force unmount of GPFS file systems
+gpfs1:  forced unmount of /tsmtest
+Tue Aug 11 13:59:21 EDT 2015: mmshutdown: Shutting down GPFS daemons
+gpfs1:  Shutting down!
+Shutting down!
+'shutdown' command about to kill process 2359316
+Tue Aug 11 13:59:28 EDT 2015: mmshutdown: Finished
+
+
+root@gpfs1:/> mmgetstate -L -a -s
+Node number Node name Quorum Nodes up Total nodes GPFS state Remarks
+----------------------------------------------------------------------------------
+1             gpfs1     1      1         2        active     quorum node
+2             gpfs2     0      0         2        down       quorum node
+
+root@gpfs2740:/> mmstartup -a
+Tue Aug 11 14:12:32 EDT 2015: mmstartup: Starting GPFS ...
+gpfs2: The GPFS subsystem is already active.
+
+----------------------------------------------
+
+GPFS and Kernel Panic
+
+
+GPFS can reboot (crash) server in case DMS timer expired but there are pending IOs.
+
+In errpt you can see PANIC:
+
+LABEL:          KERNEL_PANIC
+IDENTIFIER:     225E3B63
+
+Date/Time:       Mon Oct 10 14:01:07 CEST 2016
+Sequence Number: 10201
+Machine Id:      00FA123EE0
+Node Id:         aix_lpar
+Class:           S
+Type:            TEMP
+WPAR:            Global
+Resource Name:   PANIC
+...
+Detail Data
+ASSERT STRING
+
+PANIC STRING
+GPFS Deadman Switch timer has expired, and there are still  outstanding I/O requ
+
+
+In our case it happened during firmware upgrades (FC adapter and even during SVC FW upgrades). First lots of path failures popped up in errpt after server crashed. The root cause of this was that rw_timeout and DMS timer was no in sync. Actually DMS timer was shorter, and it did not wait until the hanging IOs did timeout. SO the solution was to increase DMS timer (matching to the value of rw_timeout).
+
+----------------------------------------------
+
+
