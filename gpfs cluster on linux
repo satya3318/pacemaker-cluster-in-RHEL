@@ -2,6 +2,7 @@ sh Storage_Scale_Standard-5.2.3.7-x86_64-Linux-install
 cd /usr/lpp/mmfs/5.2.3.7/gpfs_rpms/
 dnf install gpfs.base*.rpm gpfs.gpl*.rpm gpfs.license*.rpm gpfs.gskit*.rpm gpfs.msg*.
 dnf install kernel-devel kernel-heades gcc-c++*
+/usr/lpp/mmfs/bin/mmbuildgpl
 /usr/lpp/mmfs/bin/mmcrcluster -N /tmp/nodefile --ccr-enable -r /usr/bin/ssh -R /usr/bin/scp -C cluster1.spectrum
 # cat /tmp/nodefile 
 rocky-node1:quorum-manager
@@ -141,6 +142,36 @@ File systems in cluster cluster1.spectrum:
 2. Configure SSH key
 3. Map shared storage to the server
 4. Install GPFS & Required Kernel Softwares
+5. Run below command to build GPFS module
+]# /usr/lpp/mmfs/bin/mmbuildgpl
+--------------------------------------------------------
+mmbuildgpl: Building GPL (5.2.3.7) module begins at Wed Apr 22 06:24:53 AM UTC 2026.
+--------------------------------------------------------
+Verifying gpfs.base and gpfs.gpl version match...
+Verifying Kernel Header...
+  kernel version = 51400611 (514000611047000, 5.14.0-611.47.1+2.1.el9_7_ciq.x86_64, 5.14.0-611.47) 
+  module include dir = /lib/modules/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/build/include 
+  module build dir   = /lib/modules/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/build 
+  kernel source dir  = /usr/src/linux-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/include 
+  Found valid kernel header file under /usr/src/kernels/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/include
+Getting Kernel Cipher mode...
+   Will use skcipher routines
+Verifying Compiler...
+  make is present at /bin/make
+  cpp is present at /bin/cpp
+  gcc is present at /bin/gcc
+  g++ is present at /bin/g++
+  ld is present at /bin/ld
+Verifying Additional System Headers...
+  Verifying kernel-headers is installed ...
+    Command: /bin/rpm -q kernel-headers  
+    The required package kernel-headers is installed
+make World ...
+make InstallImages ...
+--------------------------------------------------------
+mmbuildgpl: Building GPL module completed successfully at Wed Apr 22 06:25:29 AM UTC 2026.
+--------------------------------------------------------
+[root@rocky-node3 gpfs_rpms]# 
 
 ------- To Map ISCSI stoarge --------------
 dnf install lvm2
@@ -152,3 +183,77 @@ iscsiadm -m discovery -t sendtargets -p 10.128.0.
 iscsiadm -m discovery -t sendtargets -p 10.128.0.8
 iscsiadm -m node --login
 -----------------------------------------
+
+[root@rocky-node1 opt]# mmaddnode rocky-node3
+Wed Apr 22 06:26:04 AM UTC 2026: mmaddnode: Processing node rocky-node3
+mmaddnode: Command successfully completed
+mmaddnode: Warning: Not all nodes have proper GPFS license designations.
+    Use the mmchlicense command to designate licenses as needed.
+mmaddnode: Propagating the cluster configuration data to all
+  affected nodes.  This is an asynchronous process.
+[root@rocky-node1 opt]# 
+
+[root@rocky-node1 opt]# mmchlicense server --accept -N rocky-node3
+
+The following nodes will be designated as possessing server licenses:
+        rocky-node3
+mmchlicense: Command successfully completed
+mmchlicense: Propagating the cluster configuration data to all
+  affected nodes.  This is an asynchronous process.
+[root@rocky-node1 opt]# mmlslicense 
+
+ Summary information 
+---------------------
+Number of nodes defined in the cluster:                          3
+Number of nodes with server license designation:                 3
+Number of nodes with FPO license designation:                    0
+Number of nodes with client license designation:                 0
+Number of nodes still requiring server license designation:      0
+Number of nodes still requiring client license designation:      0
+This node runs IBM Storage Scale Standard Edition
+
+root@rocky-node1 opt]# mmgetstate -aL
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         2          3      active        quorum node
+           2  rocky-node2    1*         2          3      active        quorum node
+           3  rocky-node3     0         0          3      down          
+[root@rocky-node1 opt]# 
+[root@rocky-node1 opt]# mmstartup -N rocky-node3
+Wed Apr 22 06:29:29 AM UTC 2026: mmstartup: Starting GPFS ...
+[root@rocky-node1 opt]# mmgetstate -aL
+
+ Node number  Node name    Quorum  Nodes up  Total nodes  GPFS state    Remarks    
+-----------------------------------------------------------------------------------
+           1  rocky-node1    1*         2          3      active        quorum node
+           2  rocky-node2    1*         2          3      active        quorum node
+           3  rocky-node3                                 arbitrating   
+[root@rocky-node1 opt]# 
+
+[root@rocky-node1 opt]# mmlsmount all
+File system appuser is mounted on 3 nodes.
+File system finuser is mounted on 3 nodes.
+[root@rocky-node1 opt]# mmlsmount all -L
+                                            
+File system appuser is mounted on 3 nodes:
+  10.128.0.7      rocky-node2               
+  10.128.0.6      rocky-node1               
+  10.128.0.12     rocky-node3               
+                                            
+File system finuser is mounted on 3 nodes:
+  10.128.0.7      rocky-node2               
+  10.128.0.6      rocky-node1               
+  10.128.0.12     rocky-node3               
+
+[root@rocky-node3 gpfs_rpms]# df -hP
+Filesystem      Size  Used Avail Use% Mounted on
+devtmpfs        4.0M     0  4.0M   0% /dev
+tmpfs           1.8G     0  1.8G   0% /dev/shm
+tmpfs           731M   27M  704M   4% /run
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda2        20G  8.0G   12G  41% /
+/dev/sda1       200M  7.1M  193M   4% /boot/efi
+tmpfs           366M     0  366M   0% /run/user/1000
+appuser          24G  129M   24G   1% /appuser
+finuser          12G  1.3G   11G  11% /finuser
