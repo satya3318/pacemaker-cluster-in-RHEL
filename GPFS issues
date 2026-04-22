@@ -37,3 +37,17 @@ Running transaction
   Upgrading        : kernel-headers-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64                                                                                               1/3 
   Installing       : kernel-devel-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64                                                                                                 2/3 
   Running scriptlet: kernel-devel-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64                                                                                                 2/3 
+
+
+
+fsName        poolName      fgId     server name    distance
+  ------------- ------------- -------- -------------- --------
+[root@rocky-node1 ras]# mmfsadm dump config | grep -i failureDetectionTime
+   failureDetectionTime -1
+[root@rocky-node1 ras]# 
+[root@rocky-node1 ras]# mmfsadm dump config | grep -i leaseRecoveryWait
+   leaseRecoveryWait 35
+[root@rocky-node1 ras]# mmfsadm dump config | grep -i MissedPingTimeout
+   maxMissedPingTimeout 60
+   minMissedPingTimeout 3
+[root@rocky-node1 ras]# 
