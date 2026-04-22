@@ -1,0 +1,39 @@
+[root@rocky-node1 /]# mmstartup 
+Wed Apr 22 09:31:51 AM UTC 2026: mmstartup: Starting GPFS ...
+mmremote: startSubsys: The /lib/modules/5.14.0-611.47.1+2.1.el9_7_ciq.x86_64/extra/mmfslinux.ko kernel extension does not exist.  Use mmbuildgpl command to create the needed kernel extension for your kernel or copy the binaries from another node with the identical environment.
+mmremote: startSubsys: Unable to verify kernel/module configuration.
+mmstartup: Command failed. Examine previous error messages to determine cause.
+[root@rocky-node1 /]# 
+[root@rocky-node1 /]# yum install kernel-devel-$(uname -r) kernel-headers-$(uname -r) gcc make -y
+Last metadata expiration check: 2:33:38 ago on Wed 22 Apr 2026 06:59:44 AM UTC.
+Package gcc-11.5.0-11.el9.x86_64 is already installed.
+Package make-1:4.3-8.el9.x86_64 is already installed.
+Dependencies resolved.
+===========================================================================================================================================================================
+ Package                               Architecture                  Version                                                Repository                                Size
+===========================================================================================================================================================================
+Installing:
+ kernel-devel                          x86_64                        5.14.0-611.47.1+2.1.el9_7_ciq                          ciq-sigcloud-next                         18 M
+Upgrading:
+ kernel-headers                        x86_64                        5.14.0-611.47.1+2.1.el9_7_ciq                          ciq-sigcloud-next                        2.7 M
+
+Transaction Summary
+===========================================================================================================================================================================
+Install  1 Package
+Upgrade  1 Package
+
+Total download size: 20 M
+Downloading Packages:
+(1/2): kernel-headers-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64.rpm                                                                             7.0 MB/s | 2.7 MB     00:00    
+(2/2): kernel-devel-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64.rpm                                                                                19 MB/s |  18 MB     00:00    
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Total                                                                                                                                       22 MB/s |  20 MB     00:00     
+Running transaction check
+Transaction check succeeded.
+Running transaction test
+Transaction test succeeded.
+Running transaction
+  Preparing        :                                                                                                                                                   1/1 
+  Upgrading        : kernel-headers-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64                                                                                               1/3 
+  Installing       : kernel-devel-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64                                                                                                 2/3 
+  Running scriptlet: kernel-devel-5.14.0-611.47.1+2.1.el9_7_ciq.x86_64                                                                                                 2/3 
